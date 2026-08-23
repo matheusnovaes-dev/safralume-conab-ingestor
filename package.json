@@ -1,0 +1,12 @@
+{
+  "name": "conab-ingestor",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node ingest.mjs"
+  },
+  "dependencies": {
+    "playwright": "^1.62.1",
+    "@supabase/supabase-js": "^2.112.3"
+  }
+}
