@@ -62,11 +62,23 @@ async function main() {
   const browser = await chromium.launch();
   const page = await browser.newPage();
 
+  try {
+    await run(page);
+  } catch (err) {
+    await page.screenshot({ path: "failure.png", fullPage: true }).catch(() => {});
+    throw err;
+  } finally {
+    await browser.close();
+  }
+}
+
+async function run(page) {
   console.log("Loading Conab price query tool...");
   await page.goto("https://consultaprecosdemercado.conab.gov.br/#/home", {
-    waitUntil: "networkidle",
-    timeout: 30000,
+    waitUntil: "domcontentloaded",
+    timeout: 60000,
   });
+  await page.waitForSelector("#range-input", { timeout: 30000 });
   await page.waitForTimeout(1500);
 
   await page.locator("#range-input").click();
@@ -125,8 +137,6 @@ async function main() {
     }
     console.log(`  -> ${precos.length} linhas`);
   }
-
-  await browser.close();
 
   if (rows.length === 0) {
     console.log("Nenhum dado coletado. Abortando sem gravar.");
