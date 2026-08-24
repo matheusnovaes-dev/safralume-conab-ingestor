@@ -161,6 +161,50 @@ async function run(page) {
     process.exit(1);
   }
   console.log("OK. Linhas gravadas:", dedupedRows.length);
+
+  await checkAlertas(dedupedRows);
+}
+
+async function checkAlertas(precoRows) {
+  // Preço mais recente por UF, entre o que acabou de ser gravado.
+  const latestByUf = new Map();
+  for (const row of precoRows) {
+    const current = latestByUf.get(row.uf);
+    if (!current || row.data_referencia > current.data_referencia) {
+      latestByUf.set(row.uf, row);
+    }
+  }
+
+  const { data: alertas, error } = await supabase
+    .from("alertas_preco")
+    .select("id, cultura, uf, limite, direcao")
+    .eq("ativo", true)
+    .is("disparado_em", null);
+
+  if (error) {
+    console.error("Erro ao buscar alertas:", error);
+    return;
+  }
+  if (!alertas || alertas.length === 0) return;
+
+  console.log(`\nChecando ${alertas.length} alerta(s) ativo(s)...`);
+  for (const alerta of alertas) {
+    const preco = latestByUf.get(alerta.uf);
+    if (!preco || !preco.produto.toUpperCase().includes(alerta.cultura.toUpperCase())) continue;
+
+    const disparou =
+      alerta.direcao === "acima" ? preco.preco >= alerta.limite : preco.preco <= alerta.limite;
+
+    if (disparou) {
+      console.log(
+        `  -> Alerta ${alerta.id} disparado: ${alerta.cultura}/${alerta.uf} ${alerta.direcao} de ${alerta.limite} (preço atual: ${preco.preco})`,
+      );
+      await supabase
+        .from("alertas_preco")
+        .update({ disparado_em: new Date().toISOString() })
+        .eq("id", alerta.id);
+    }
+  }
 }
 
 main().catch((err) => {
