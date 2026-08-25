@@ -10,6 +10,7 @@ if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
 }
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+console.log("Gravando no projeto Supabase:", new URL(SUPABASE_URL).host);
 
 const PRODUTO_ID = "29"; // SOJA
 const PRODUTO_NOME = "SOJA EM GRÃOS (60 kg)";
