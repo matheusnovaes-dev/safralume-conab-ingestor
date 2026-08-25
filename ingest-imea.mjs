@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { PDFParse } from "pdf-parse";
+import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -159,6 +160,106 @@ function extrairNumeroBoletim(textoPagina1) {
   return m ? parseInt(m[1], 10) : null;
 }
 
+/**
+ * Acha a manchete da página 2 (a análise/destaque) pelo tamanho de fonte —
+ * não dá pra confiar na ordem de leitura do texto puro, porque o boletim de
+ * cada cadeia intercala a manchete com título de gráfico/dado numérico em
+ * ordens diferentes (testado e confirmado nas 4 cadeias). A manchete é
+ * sempre o maior texto da página, uma linha só, sem dígito.
+ */
+async function acharManchete(buf) {
+  const doc = await pdfjsLib.getDocument({ data: new Uint8Array(buf) }).promise;
+  if (doc.numPages < 2) return null;
+  const page = await doc.getPage(2);
+  const content = await page.getTextContent();
+
+  const linhas = [];
+  for (const it of content.items) {
+    if (!it.str.trim()) continue;
+    const y = it.transform[5];
+    let linha = linhas.find((l) => Math.abs(l.y - y) < 2);
+    if (!linha) {
+      linha = { y, itens: [] };
+      linhas.push(linha);
+    }
+    linha.itens.push(it);
+  }
+  for (const l of linhas) {
+    l.itens.sort((a, b) => a.transform[4] - b.transform[4]);
+    l.texto = l.itens.map((i) => i.str).join("");
+    l.tamFonte = Math.max(...l.itens.map((i) => Math.abs(i.transform[0])));
+  }
+
+  const candidatas = linhas
+    .filter((l) => l.tamFonte >= 14)
+    .filter((l) => /[a-zà-úA-ZÀ-Ú]/.test(l.texto))
+    .filter((l) => !/\d/.test(l.texto))
+    .filter((l) => l.texto.trim().length >= 8 && l.texto.trim().length <= 80)
+    .sort((a, b) => b.tamFonte - a.tamFonte);
+
+  return candidatas[0]?.texto.trim() ?? null;
+}
+
+function pareceProsa(linha) {
+  const l = linha.trim();
+  if (l.length < 2) return false;
+  if (/^(Fonte|Nota|Obs)[:.]/i.test(l)) return false; // legenda/rodapé de gráfico
+  if (/^[¹²³]/.test(l)) return false; // marcador de nota de rodapé
+  const letras = l.match(/[a-zà-úA-ZÀ-Ú]/g) ?? [];
+  if (letras.length === 0) return false;
+  const minusculas = l.match(/[a-zà-ú]/g) ?? [];
+  // título/legenda de gráfico é majoritariamente maiúsculo (mesmo com
+  // alguma unidade em minúsculo tipo "(R$/kg)"); prosa de verdade não é.
+  if (minusculas.length / letras.length < 0.4) return false;
+  return true; // pode começar com número (quebra de linha no meio de frase)
+}
+
+/**
+ * Pega o parágrafo de "destaque" logo depois da manchete, usando o texto
+ * puro (esse já vem contíguo e bem formado — o problema nunca foi o
+ * parágrafo em si, só achar onde ele começa). Corta num fim de frase de
+ * verdade — é resumo com link "ler completo" ao lado, não precisa do
+ * parágrafo inteiro.
+ */
+function extrairResumo(textoPagina2, manchete) {
+  if (!manchete) return null;
+  const idx = textoPagina2.indexOf(manchete);
+  if (idx === -1) return null;
+  const resto = textoPagina2.slice(idx + manchete.length);
+  const linhas = resto.split("\n");
+
+  const acumulado = [];
+  let comecou = false;
+  for (const linhaRaw of linhas) {
+    const linha = linhaRaw.trim();
+    if (!comecou) {
+      if (pareceProsa(linha)) comecou = true;
+      else continue;
+    }
+    if (!pareceProsa(linha)) break;
+    acumulado.push(linha);
+    if (acumulado.join(" ").length > 1200) break;
+  }
+  if (acumulado.length === 0) return null;
+
+  let texto = "";
+  for (const linha of acumulado) {
+    if (texto.endsWith("-") && /[a-zà-ú]$/i.test(texto.slice(0, -1))) {
+      texto = texto.slice(0, -1) + linha;
+    } else if (texto) {
+      texto += " " + linha;
+    } else {
+      texto = linha;
+    }
+  }
+
+  if (texto.length > 500) {
+    const corte = texto.lastIndexOf(". ", 500);
+    if (corte > 150) texto = texto.slice(0, corte + 1);
+  }
+  return texto;
+}
+
 async function jaTemos(cadeia, dataPublicacao) {
   if (DRY_RUN) return false;
   const { data } = await supabase
@@ -207,6 +308,13 @@ async function coletarCadeia(cadeia, cadeiaId) {
   const numero = extrairNumeroBoletim(result.pages?.[0]?.text ?? textoCompleto);
   const indicadores = parsearIndicadores(textoCompleto, cadeia, anoPublicacao);
 
+  const manchete = await acharManchete(buf).catch((err) => {
+    console.log("  Aviso: falha ao achar manchete —", err.message);
+    return null;
+  });
+  const resumo = extrairResumo(result.pages?.[1]?.text ?? "", manchete);
+  console.log(`  Manchete: ${manchete ?? "(não encontrada)"}`);
+
   console.log(`  Boletim nº ${numero ?? "?"} — ${indicadores.length} indicadores extraídos.`);
   if (indicadores.length === 0) {
     console.log("  Nenhum indicador reconhecido — layout pode ter mudado, pulando gravação.");
@@ -214,6 +322,7 @@ async function coletarCadeia(cadeia, cadeiaId) {
   }
 
   if (DRY_RUN) {
+    console.log("  Resumo:", resumo ?? "(não encontrado)");
     console.log("  DRY RUN — amostra:");
     console.log(JSON.stringify(indicadores.slice(0, 6), null, 2));
     return;
@@ -234,6 +343,8 @@ async function coletarCadeia(cadeia, cadeiaId) {
       titulo: item.Nome,
       data_publicacao: dataPublicacao,
       url_leitura: item.UrlCompleto,
+      manchete,
+      resumo,
     },
     { onConflict: "cadeia,data_publicacao" },
   );
