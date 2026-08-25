@@ -3,27 +3,47 @@ import { createClient } from "@supabase/supabase-js";
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+// Runs diárias pedem só uma janela curta (pega a semana corrente + alguma
+// margem pra revisão tardia da Conab). Um backfill único usa um valor bem
+// maior via workflow_dispatch, sem mudar o padrão do cron.
+const DIAS_HISTORICO = parseInt(process.env.DIAS_HISTORICO ?? "40", 10);
 
-if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-  console.error("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY env vars.");
-  process.exit(1);
+const DRY_RUN = !SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY;
+if (DRY_RUN) {
+  console.log(
+    "SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY ausentes — rodando em modo dry-run (não grava nada).",
+  );
 }
+const supabase = DRY_RUN ? null : createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-console.log("Gravando no projeto Supabase:", new URL(SUPABASE_URL).host);
+// Todos os 77 produtos oferecidos pela Conab (código interno -> nome vem na
+// própria resposta da API, não precisamos mapear aqui).
+const PRODUTOS = [
+  465, 929, 15, 17, 647, 2190, 1913, 24, 19, 932, 2538, 469, 1667, 735, 2007, 226, 323, 1634, 937,
+  2692, 2424, 489, 3749, 3750, 240, 490, 737, 248, 251, 1014, 491, 943, 1, 2, 648, 1356, 650, 12,
+  11, 329, 20, 222, 739, 2191, 13, 474, 583, 576, 476, 2381, 14, 27, 478, 818, 479, 233, 22, 2565,
+  1322, 2566, 1170, 246, 1325, 38, 1089, 992, 660, 740, 453, 29, 23, 232, 486, 487, 21, 1493, 488,
+].map(String);
 
-const PRODUTO_ID = "29"; // SOJA
-const PRODUTO_NOME = "SOJA EM GRÃOS (60 kg)";
-const NIVEL_CODE = "5"; // PRODUTOR
-const TARGET_UFS = ["GOIAS", "MATO GROSSO", "PARANA"];
+// Todas as 27 UFs (26 estados + DF).
+const UFS = [
+  "AC", "AL", "AM", "AP", "BA", "CE", "DF", "ES", "GO", "MA", "MG", "MS", "MT",
+  "PA", "PB", "PE", "PI", "PR", "RJ", "RN", "RO", "RR", "RS", "SC", "SE", "SP", "TO",
+];
 
-// O front sempre filtra preço pela sigla de 2 letras (produtor.uf, tipo
-// "GO") — se a resposta da Conab não trouxer `uf` abreviado, cair pro nome
-// completo ("GOIAS") deixaria a linha gravada mas invisível pro dashboard.
-const UF_SIGLA = { GOIAS: "GO", "MATO GROSSO": "MT", PARANA: "PR" };
+// Só nível Produtor: é o que o dashboard usa (preço na porteira), e manter
+// um nível só evita colidir com a chave única atual da tabela
+// (produto, uf, data_referencia — sem nivel_comercializacao).
+const NIVEL_PRODUTOR = "5";
 
-function ddmmyyyy(date) {
-  return date.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
+const PAGE_SIZE = 5000;
+
+function formatPeriodo(diasAtras) {
+  const fim = new Date();
+  const inicio = new Date();
+  inicio.setDate(inicio.getDate() - diasAtras);
+  const fmt = (d) => d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
+  return `${fmt(inicio)} até ${fmt(fim)}`;
 }
 
 function parsePeriodoEndDate(periodo) {
@@ -38,30 +58,102 @@ function parseValor(valor) {
   return parseFloat(valor.trim().replace(/\./g, "").replace(",", "."));
 }
 
-let previousUf = null;
+// "SOJA EM GRÃOS   (60 kg)" -> { produto: "SOJA EM GRÃOS (60 kg)", unidade: "60 kg" }
+// Importante: a unidade fica DENTRO de `produto` (não é removida) — vários
+// produtos existem em mais de uma unidade ao mesmo tempo (ex: "ALHO COMUM
+// (10 kg)" e "ALHO COMUM (kg)" são séries diferentes). Tirar a unidade do
+// nome faria as duas colidirem na chave única (produto, uf, data_referencia)
+// e uma sobrescreveria a outra. `unidade` aqui é só uma cópia pra exibição.
+function splitProdutoUnidade(nomeProduto) {
+  const limpo = nomeProduto.trim().replace(/\s+/g, " ");
+  const match = limpo.match(/\(([^)]+)\)\s*$/);
+  return { produto: limpo, unidade: match ? match[1].trim() : null };
+}
 
-async function queryUf(page, uf) {
-  await page.locator('.br-select:has-text("Unidade da federação")').first().click();
-  await page.waitForTimeout(400);
-  // "Unidade da federação" is a multi-select checkbox list — uncheck whatever
-  // was picked last run, or selections accumulate across UFs.
-  if (previousUf) {
-    await page.getByText(previousUf, { exact: true }).click();
-    await page.waitForTimeout(200);
+async function bootstrap(page) {
+  console.log("Loading Conab price query tool...");
+  await page.goto("https://consultaprecosdemercado.conab.gov.br/#/home", {
+    waitUntil: "domcontentloaded",
+    timeout: 60000,
+  });
+  await page.waitForSelector("#range-input", { timeout: 30000 });
+  await page.waitForTimeout(1500);
+
+  await page.locator("#range-input").click();
+  await page.waitForTimeout(500);
+  const days = page.locator(".flatpickr-day:not(.prevMonthDay):not(.nextMonthDay)");
+  await days.nth(0).click();
+  await page.waitForTimeout(300);
+  await days.nth(17).click();
+  await page.waitForTimeout(500);
+
+  const pesquisarBtn = page.locator('button:has-text("Pesquisar")');
+  await pesquisarBtn.click();
+  await page.waitForTimeout(1500);
+
+  const produtoField = page.locator('.br-select:has-text("Produto")').first();
+  if ((await produtoField.count()) === 0) {
+    await page.screenshot({ path: "failure.png", fullPage: true });
+    throw new Error("Campo 'Produto' não apareceu após Pesquisar.");
   }
-  await page.getByText(uf, { exact: true }).click();
-  previousUf = uf;
+  await produtoField.click();
+  await page.waitForTimeout(400);
+  await page.getByText("SOJA", { exact: true }).click();
   await page.locator("body").click({ position: { x: 10, y: 10 } });
   await page.waitForTimeout(600);
 
-  const responsePromise = page.waitForResponse(
-    (res) => res.url().includes("/consulta/precos/consultar") && res.request().method() === "POST",
+  await page.locator('.br-select:has-text("Nível de comercialização")').first().click();
+  await page.waitForTimeout(400);
+  await page.getByText("PRODUTOR", { exact: true }).click();
+  await page.locator("body").click({ position: { x: 10, y: 10 } });
+  await page.waitForTimeout(600);
+
+  await page.locator('.br-select:has-text("Unidade da federação")').first().click();
+  await page.waitForTimeout(400);
+  await page.getByText("GOIAS", { exact: true }).click();
+  await page.locator("body").click({ position: { x: 10, y: 10 } });
+  await page.waitForTimeout(600);
+
+  const reqPromise = page.waitForRequest(
+    (r) => r.url().includes("/consulta/precos/consultar") && r.method() === "POST",
     { timeout: 15000 },
   );
   await page.locator('button:has-text("Consultar")').click();
-  const res = await responsePromise;
-  const body = await res.json().catch(() => null);
-  return body?.precos ?? [];
+  const req = await reqPromise;
+  return { url: req.url(), body: JSON.parse(req.postData()) };
+}
+
+async function fetchAllPages(page, url, baseBody, periodo) {
+  const rows = [];
+  let start = 0;
+  let count = Infinity;
+
+  while (start < count) {
+    const body = {
+      ...baseBody,
+      produto: PRODUTOS,
+      nivelComercializacao: [NIVEL_PRODUTOR],
+      unidadeFederacao: UFS,
+      periodo,
+      pageSize: PAGE_SIZE,
+      start,
+    };
+    const res = await page.request.post(url, {
+      headers: { "content-type": "application/json" },
+      data: body,
+      timeout: 60000,
+    });
+    if (!res.ok()) {
+      throw new Error(`Conab respondeu ${res.status()} na página start=${start}`);
+    }
+    const json = await res.json();
+    count = json.count ?? 0;
+    rows.push(...(json.precos ?? []));
+    console.log(`  página start=${start}: +${json.precos?.length ?? 0} linhas (total esperado: ${count})`);
+    start += PAGE_SIZE;
+  }
+
+  return rows;
 }
 
 async function main() {
@@ -79,70 +171,37 @@ async function main() {
 }
 
 async function run(page) {
-  console.log("Loading Conab price query tool...");
-  await page.goto("https://consultaprecosdemercado.conab.gov.br/#/home", {
-    waitUntil: "domcontentloaded",
-    timeout: 60000,
-  });
-  await page.waitForSelector("#range-input", { timeout: 30000 });
-  await page.waitForTimeout(1500);
+  const { url, body: baseBody } = await bootstrap(page);
+  const periodo = formatPeriodo(DIAS_HISTORICO);
+  console.log(`\nBuscando todos os produtos x todas as UFs (nível Produtor), período: ${periodo}`);
 
-  await page.locator("#range-input").click();
-  await page.waitForTimeout(500);
-  // Pick two day-cells within the same visible month, ~2.5 weeks apart, to
-  // stay safely under the site's 4-week-per-query limit.
-  const days = page.locator(".flatpickr-day:not(.prevMonthDay):not(.nextMonthDay)");
-  await days.nth(0).click();
-  await page.waitForTimeout(300);
-  await days.nth(17).click();
-  await page.waitForTimeout(500);
+  const rawRows = await fetchAllPages(page, url, baseBody, periodo);
+  console.log(`\n${rawRows.length} linhas brutas recebidas. Preenchendo grupos (a API "mescla" produto/nível/uf repetidos)...`);
 
-  const pesquisarBtn = page.locator('button:has-text("Pesquisar")');
-  await pesquisarBtn.click();
-  await page.waitForTimeout(1500);
-
-  const produtoField = page.locator('.br-select:has-text("Produto")').first();
-  if ((await produtoField.count()) === 0) {
-    await page.screenshot({ path: "/tmp/conab-ingest-error.png", fullPage: true });
-    throw new Error(
-      "Campo 'Produto' não apareceu após Pesquisar — intervalo de datas provavelmente inválido. Ver /tmp/conab-ingest-error.png",
-    );
-  }
-
-  await produtoField.click();
-  await page.waitForTimeout(400);
-  await page.getByText("SOJA", { exact: true }).click();
-  await page.locator("body").click({ position: { x: 10, y: 10 } });
-  await page.waitForTimeout(600);
-
-  await page.locator('.br-select:has-text("Nível de comercialização")').first().click();
-  await page.waitForTimeout(400);
-  await page.getByText("PRODUTOR", { exact: true }).click();
-  await page.locator("body").click({ position: { x: 10, y: 10 } });
-  await page.waitForTimeout(600);
-
+  // A resposta só traz nomeProduto/nivel/uf na primeira linha de cada grupo
+  // (produto+nível+uf) — as linhas seguintes do mesmo grupo, com período
+  // diferente, vêm com esses campos null. Preciso herdar do último valor
+  // visto, na ordem em que a API devolveu (inclusive entre páginas).
+  let last = { nomeProduto: null, uf: null };
   const rows = [];
+  for (const p of rawRows) {
+    if (p.nomeProduto != null) last = { nomeProduto: p.nomeProduto, uf: p.uf };
+    if (!last.nomeProduto || !last.uf) continue;
 
-  for (const uf of TARGET_UFS) {
-    console.log(`Querying ${uf}...`);
-    const precos = await queryUf(page, uf);
-    const ufAbbrev = precos[0]?.uf;
-    const ufGravada = ufAbbrev || UF_SIGLA[uf] || uf;
-    for (const p of precos) {
-      const dataRef = parsePeriodoEndDate(p.periodo);
-      const valor = parseValor(p.valor);
-      if (!dataRef || Number.isNaN(valor)) continue;
-      rows.push({
-        produto: PRODUTO_NOME,
-        uf: ufGravada,
-        nivel_comercializacao: "PRODUTOR",
-        preco: valor,
-        unidade: "saca 60kg",
-        data_referencia: dataRef,
-        fonte: "Conab",
-      });
-    }
-    console.log(`  -> ${precos.length} linhas (uf gravada como "${ufGravada}")`);
+    const dataRef = parsePeriodoEndDate(p.periodo);
+    const valor = parseValor(p.valor);
+    if (!dataRef || Number.isNaN(valor)) continue;
+
+    const { produto, unidade } = splitProdutoUnidade(last.nomeProduto);
+    rows.push({
+      produto,
+      uf: last.uf,
+      nivel_comercializacao: "PRODUTOR",
+      preco: valor,
+      unidade,
+      data_referencia: dataRef,
+      fonte: "Conab",
+    });
   }
 
   if (rows.length === 0) {
@@ -150,30 +209,46 @@ async function run(page) {
     return;
   }
 
-  // Dedupe by the same key the DB constraint uses — Postgres upsert fails if
-  // a batch has two rows targeting the same conflict key.
+  // Dedupe pela mesma chave usada no upsert — Postgres upsert falha se um
+  // lote tiver duas linhas visando o mesmo conflict key.
   const byKey = new Map();
   for (const row of rows) {
     byKey.set(`${row.produto}|${row.uf}|${row.data_referencia}`, row);
   }
   const dedupedRows = [...byKey.values()];
+  console.log(
+    `\n${dedupedRows.length} linhas prontas pra gravar (${rows.length} coletadas, ${rows.length - dedupedRows.length} duplicadas removidas).`,
+  );
+  console.log("Produtos distintos:", new Set(dedupedRows.map((r) => r.produto)).size);
+  console.log("UFs distintas:", new Set(dedupedRows.map((r) => r.uf)).size);
 
-  console.log(`\nGravando ${dedupedRows.length} linhas no Supabase (${rows.length} coletadas, ${rows.length - dedupedRows.length} duplicadas removidas)...`);
-  const { error } = await supabase
-    .from("precos")
-    .upsert(dedupedRows, { onConflict: "produto,uf,data_referencia" });
-
-  if (error) {
-    console.error("Erro ao gravar no Supabase:", error);
-    process.exit(1);
+  if (DRY_RUN) {
+    console.log("\nDRY RUN — amostra de 5 linhas:");
+    console.log(JSON.stringify(dedupedRows.slice(0, 5), null, 2));
+    return;
   }
-  console.log("OK. Linhas gravadas:", dedupedRows.length);
+
+  console.log("\nGravando no projeto Supabase:", new URL(SUPABASE_URL).host);
+  const CHUNK = 1000;
+  let gravadas = 0;
+  for (let i = 0; i < dedupedRows.length; i += CHUNK) {
+    const chunk = dedupedRows.slice(i, i + CHUNK);
+    const { error } = await supabase.from("precos").upsert(chunk, {
+      onConflict: "produto,uf,data_referencia",
+    });
+    if (error) {
+      console.error(`Erro ao gravar lote ${i}-${i + chunk.length}:`, error);
+      process.exit(1);
+    }
+    gravadas += chunk.length;
+    console.log(`  gravado lote ${i}-${i + chunk.length} (${gravadas}/${dedupedRows.length})`);
+  }
+  console.log("OK. Linhas gravadas:", gravadas);
 
   await checkAlertas(dedupedRows);
 }
 
 async function checkAlertas(precoRows) {
-  // Preço mais recente por UF, entre o que acabou de ser gravado.
   const latestByUf = new Map();
   for (const row of precoRows) {
     const current = latestByUf.get(row.uf);

@@ -4,7 +4,12 @@ on:
   schedule:
     # 09:00 America/Sao_Paulo (UTC-3) = 12:00 UTC
     - cron: "0 12 * * *"
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      dias_historico:
+        description: "Quantos dias pra trás buscar (padrão: 40, cobre a janela normal). Use um valor grande (ex: 730) só pra um backfill único."
+        required: false
+        default: "40"
 
 jobs:
   ingest:
@@ -25,6 +30,7 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          DIAS_HISTORICO: ${{ github.event.inputs.dias_historico || '40' }}
         run: bun run ingest.mjs
 
       - name: Upload failure screenshot
