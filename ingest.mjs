@@ -16,6 +16,11 @@ const PRODUTO_NOME = "SOJA EM GRÃOS (60 kg)";
 const NIVEL_CODE = "5"; // PRODUTOR
 const TARGET_UFS = ["GOIAS", "MATO GROSSO", "PARANA"];
 
+// O front sempre filtra preço pela sigla de 2 letras (produtor.uf, tipo
+// "GO") — se a resposta da Conab não trouxer `uf` abreviado, cair pro nome
+// completo ("GOIAS") deixaria a linha gravada mas invisível pro dashboard.
+const UF_SIGLA = { GOIAS: "GO", "MATO GROSSO": "MT", PARANA: "PR" };
+
 function ddmmyyyy(date) {
   return date.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
 }
@@ -121,13 +126,14 @@ async function run(page) {
     console.log(`Querying ${uf}...`);
     const precos = await queryUf(page, uf);
     const ufAbbrev = precos[0]?.uf;
+    const ufGravada = ufAbbrev || UF_SIGLA[uf] || uf;
     for (const p of precos) {
       const dataRef = parsePeriodoEndDate(p.periodo);
       const valor = parseValor(p.valor);
       if (!dataRef || Number.isNaN(valor)) continue;
       rows.push({
         produto: PRODUTO_NOME,
-        uf: ufAbbrev || uf,
+        uf: ufGravada,
         nivel_comercializacao: "PRODUTOR",
         preco: valor,
         unidade: "saca 60kg",
@@ -135,7 +141,7 @@ async function run(page) {
         fonte: "Conab",
       });
     }
-    console.log(`  -> ${precos.length} linhas`);
+    console.log(`  -> ${precos.length} linhas (uf gravada como "${ufGravada}")`);
   }
 
   if (rows.length === 0) {
