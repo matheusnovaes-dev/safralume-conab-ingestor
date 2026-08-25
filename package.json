@@ -6,7 +6,8 @@
     "start": "node ingest.mjs"
   },
   "dependencies": {
-    "playwright": "^1.62.1",
-    "@supabase/supabase-js": "^2.112.3"
+    "@supabase/supabase-js": "^2.112.3",
+    "pdf-parse": "^2.4.5",
+    "playwright": "^1.62.1"
   }
 }
