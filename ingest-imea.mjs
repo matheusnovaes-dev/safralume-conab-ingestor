@@ -264,11 +264,15 @@ async function jaTemos(cadeia, dataPublicacao) {
   if (DRY_RUN) return false;
   const { data } = await supabase
     .from("imea_boletins")
-    .select("id")
+    .select("id, manchete")
     .eq("cadeia", cadeia)
     .eq("data_publicacao", dataPublicacao)
     .maybeSingle();
-  return !!data;
+  if (!data) return false;
+  // Edição já gravada, mas sem manchete/resumo (extraída numa versão
+  // anterior do script, ou a extração falhou naquela vez) — tenta de novo
+  // em vez de ficar incompleta pra sempre.
+  return data.manchete != null;
 }
 
 async function coletarCadeia(cadeia, cadeiaId) {
