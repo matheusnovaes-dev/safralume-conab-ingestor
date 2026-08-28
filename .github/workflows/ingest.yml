@@ -2,8 +2,11 @@ name: Ingest Conab prices
 
 on:
   schedule:
-    # 09:00 America/Sao_Paulo (UTC-3) = 12:00 UTC
-    - cron: "0 12 * * *"
+    # ~09:00 America/Sao_Paulo (UTC-3) = 12:xx UTC. Minuto 12 (não 0) de
+    # propósito — o GitHub Actions atrasa/derruba agendamentos concentrados
+    # na hora cheia (":00"), problema conhecido da plataforma; achado
+    # investigando um dia inteiro sem rodar (27-28/08/2026).
+    - cron: "12 12 * * *"
   workflow_dispatch:
     inputs:
       dias_historico:
