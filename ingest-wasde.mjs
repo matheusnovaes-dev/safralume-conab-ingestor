@@ -14,14 +14,18 @@ const supabase = DRY_RUN ? null : createClient(SUPABASE_URL, SUPABASE_SERVICE_RO
 const LISTAGEM_URL = "https://usda.library.cornell.edu/concern/publications/3t945q76s";
 const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36";
 
-// Cada tabela do WASDE tem layout de coluna próprio. Soja e milho
-// compartilham a mesma ordem: Beginning | Produção | Imports | Domestico |
-// Total | Exportação | Estoque final. Não inclui algodão aqui de propósito
-// — a tabela de algodão tem ordem de coluna diferente e outra unidade
-// (fardos, não toneladas métricas), risco real de gravar unidade errada.
+// Cada tabela do WASDE tem layout de coluna próprio, então cada cultura
+// declara o índice de Produção/Exportação/Estoque final dentro da linha
+// "Brazil" (já sem o "Brazil" em si, que a regex descarta). Soja/milho:
+// Beginning|Produção|Imports|Doméstico|Total|Exportação|Estoque. Algodão:
+// Beginning|Produção|Imports|Doméstico|Exportação|Perda|Estoque — ordem
+// diferente E unidade diferente (milhões de fardos de 480lb, não toneladas
+// métricas) — por isso o campo `unidade` existe, pra não fingir que é a
+// mesma coisa que soja/milho.
 const TABELAS = {
-  milho: "World Corn Supply and Use",
-  soja: "World Soybean Supply and Use",
+  milho: { titulo: "World Corn Supply and Use", producao: 1, exportacao: 5, estoque: 6, unidade: "mi_ton" },
+  soja: { titulo: "World Soybean Supply and Use", producao: 1, exportacao: 5, estoque: 6, unidade: "mi_ton" },
+  algodao: { titulo: "World Cotton Supply and Use", producao: 1, exportacao: 4, estoque: 6, unidade: "mi_fardos" },
 };
 
 async function buscarUrlRelatorioMaisRecente() {
@@ -43,7 +47,8 @@ async function buscarUrlRelatorioMaisRecente() {
   return { url: `https://usda.library.cornell.edu${caminho}`, relatorioMes };
 }
 
-function extrairBrasil(texto, tituloTabela, cultura) {
+function extrairBrasil(texto, config, cultura) {
+  const { titulo: tituloTabela, producao: idxProducao, exportacao: idxExportacao, estoque: idxEstoque, unidade } = config;
   const inicioTabela = texto.indexOf(tituloTabela);
   if (inicioTabela === -1) {
     console.log(`  ! Tabela "${tituloTabela}" não encontrada no relatório.`);
@@ -80,13 +85,16 @@ function extrairBrasil(texto, tituloTabela, cultura) {
     return null;
   }
 
-  const num = (s) => (s === "3/" || s == null ? null : parseFloat(s));
+  // valores tipo "3/" são notas de rodapé da USDA (dado omitido), não
+  // números — vira null, não é bug de parsing.
+  const num = (s) => (s == null || /[^0-9.\-]/.test(s) ? null : parseFloat(s));
   return {
     cultura,
     ano_safra: ultimoAnoSafra ?? "desconhecido",
-    producao_mi_ton: num(ultimoBrasil[1]),
-    exportacao_mi_ton: num(ultimoBrasil[5]),
-    estoque_final_mi_ton: num(ultimoBrasil[6]),
+    unidade,
+    producao_mi_ton: num(ultimoBrasil[idxProducao]),
+    exportacao_mi_ton: num(ultimoBrasil[idxExportacao]),
+    estoque_final_mi_ton: num(ultimoBrasil[idxEstoque]),
   };
 }
 
@@ -101,9 +109,9 @@ async function run() {
   const texto = (await res.text()).replace(/\r\n/g, "\n");
 
   const rows = [];
-  for (const [cultura, tituloTabela] of Object.entries(TABELAS)) {
+  for (const [cultura, config] of Object.entries(TABELAS)) {
     console.log(`Extraindo ${cultura}...`);
-    const dado = extrairBrasil(texto, tituloTabela, cultura);
+    const dado = extrairBrasil(texto, config, cultura);
     if (!dado) continue;
     console.log(`  -> ${JSON.stringify(dado)}`);
     rows.push({ relatorio_mes: relatorioMes, fonte: "USDA/WASDE", ...dado });

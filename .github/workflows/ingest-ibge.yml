@@ -1,0 +1,22 @@
+name: Ingest produção agrícola (IBGE/LSPA)
+
+on:
+  schedule:
+    # Dia 15 de cada mês, 14:40 UTC — o LSPA publica por volta do dia 13-14.
+    - cron: "40 14 15 * *"
+  workflow_dispatch: {}
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - name: Install dependencies
+        run: bun install
+      - name: Run ingestion
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: bun run ingest-ibge.mjs
