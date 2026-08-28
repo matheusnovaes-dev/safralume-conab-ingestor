@@ -1,0 +1,23 @@
+name: Ingest câmbio (BCB PTAX)
+
+on:
+  schedule:
+    # 13:30 America/Sao_Paulo (UTC-3) = 16:30 UTC — a PTAX do dia publica
+    # por volta das 13h, esse horário dá margem.
+    - cron: "30 16 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - name: Install dependencies
+        run: bun install
+      - name: Run ingestion
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: bun run ingest-cambio.mjs

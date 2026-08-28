@@ -1,0 +1,23 @@
+name: Ingest WASDE (USDA)
+
+on:
+  schedule:
+    # Dia 13 de cada mês, 14:00 UTC — o WASDE sai por volta do dia 10-12,
+    # esse horário dá margem pro espelho da Cornell publicar o arquivo.
+    - cron: "0 14 13 * *"
+  workflow_dispatch: {}
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - name: Install dependencies
+        run: bun install
+      - name: Run ingestion
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: bun run ingest-wasde.mjs
