@@ -23,6 +23,39 @@ const PRODUTOS = [
   39470, 39471,
 ].join(",");
 
+// A API devolve o nome completo do estado ("Mato Grosso"), mas o resto do
+// app usa sigla de 2 letras ("MT") em toda tabela (produtores, precos, etc)
+// — converte na ingestão pra não introduzir uma convenção nova sozinha.
+const NOME_PARA_UF = {
+  Rondônia: "RO",
+  Acre: "AC",
+  Amazonas: "AM",
+  Roraima: "RR",
+  Pará: "PA",
+  Amapá: "AP",
+  Tocantins: "TO",
+  Maranhão: "MA",
+  Piauí: "PI",
+  Ceará: "CE",
+  "Rio Grande do Norte": "RN",
+  Paraíba: "PB",
+  Pernambuco: "PE",
+  Alagoas: "AL",
+  Sergipe: "SE",
+  Bahia: "BA",
+  "Minas Gerais": "MG",
+  "Espírito Santo": "ES",
+  "Rio de Janeiro": "RJ",
+  "São Paulo": "SP",
+  Paraná: "PR",
+  "Santa Catarina": "SC",
+  "Rio Grande do Sul": "RS",
+  "Mato Grosso do Sul": "MS",
+  "Mato Grosso": "MT",
+  Goiás: "GO",
+  "Distrito Federal": "DF",
+};
+
 const VAR_ID_PARA_CAMPO = {
   109: "area_plantada_ha",
   216: "area_colhida_ha",
@@ -72,7 +105,11 @@ async function run() {
     for (const resultado of v.resultados) {
       const nomeProduto = limparNomeProduto(Object.values(resultado.classificacoes[0].categoria)[0]);
       for (const serie of resultado.series) {
-        const uf = serie.localidade.nome;
+        const uf = NOME_PARA_UF[serie.localidade.nome];
+        if (!uf) {
+          console.log(`  ! Estado não mapeado: "${serie.localidade.nome}"`);
+          continue;
+        }
         const valor = numeroOuNull(serie.serie[periodoId]);
         const chave = `${uf}|${nomeProduto}`;
         if (!porChave.has(chave)) {
