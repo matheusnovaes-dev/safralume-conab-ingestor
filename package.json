@@ -8,7 +8,7 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.112.3",
     "pdf-parse": "^2.4.5",
-    "pdfjs-dist": "5.4.296",
+    "pdfjs-dist": "^6.2.108",
     "playwright": "^1.62.1",
     "xlsx": "^0.18.5"
   }
