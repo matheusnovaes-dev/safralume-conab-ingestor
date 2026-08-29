@@ -1,0 +1,23 @@
+name: Checar alertas de clima
+
+on:
+  schedule:
+    # Todo dia às 09:20 UTC (06:20 BRT) — antes do início do dia de campo,
+    # com a previsão do dia já disponível.
+    - cron: "20 9 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - name: Install dependencies
+        run: bun install
+      - name: Run check
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: bun run check-alertas-clima.mjs
