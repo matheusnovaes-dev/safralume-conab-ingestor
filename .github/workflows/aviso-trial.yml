@@ -1,0 +1,19 @@
+name: Avisar trial expirando
+
+on:
+  schedule:
+    # Todo dia às 12:00 UTC (09:00 BRT) — depois que o webhook do dia
+    # anterior teve tempo de assentar, ainda de manhã.
+    - cron: "0 12 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  avisar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Chamar o endpoint de aviso do painel
+        run: |
+          curl -sf -X POST \
+            -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" \
+            https://www.safralume.com.br/api/cron/aviso-trial
