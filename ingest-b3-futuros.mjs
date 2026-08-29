@@ -18,7 +18,11 @@ const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36";
 // responde 200 direto via curl puro, sem Playwright.
 const BASE_URL = "https://arquivos.b3.com.br/bdi/download/bdi";
 
-// Só os 5 contratos futuros de commodities agropecuárias listados na B3.
+// Todos os contratos futuros de commodities agropecuárias listados na B3 —
+// conferido varrendo TODOS os prefixos de ticker do boletim (não só os que
+// eu já conhecia de cabeça) e cruzando contra a ficha oficial de cada
+// contrato na B3. Cotton/algodão não tem contrato na B3 (mercado usa ICE
+// internacional, já coberto via WASDE) — não é omissão, é ausência real.
 // Unidade/moeda conferidas contra as especificações oficiais de cada
 // contrato (não inventadas) — DOL/WDO (câmbio) ficam de fora de propósito,
 // já cobertos pela cotação do BCB em ingest-cambio.mjs.
@@ -26,12 +30,14 @@ const PRODUTOS = {
   BGI: { nome: "Boi Gordo", moeda: "BRL", unidade: "R$/@ (arroba)" },
   CCM: { nome: "Milho", moeda: "BRL", unidade: "R$/saca 60kg" },
   ICF: { nome: "Café Arábica", moeda: "USD", unidade: "US$/saca 60kg" },
+  CNL: { nome: "Café Conilon/Robusta", moeda: "BRL", unidade: "R$/saca 60kg" },
   SJC: { nome: "Soja (cross listing CME)", moeda: "USD", unidade: "US$/saca 60kg" },
+  SOY: { nome: "Soja FOB Santos (Platts)", moeda: "USD", unidade: "US$/tonelada" },
   ETH: { nome: "Etanol Hidratado", moeda: "BRL", unidade: "R$/m³" },
 };
 
 const MES_LETRA = { F: 1, G: 2, H: 3, J: 4, K: 5, M: 6, N: 7, Q: 8, U: 9, V: 10, X: 11, Z: 12 };
-const TICKER_RE = /^(BGI|CCM|ICF|SJC|ETH)([FGHJKMNQUVXZ])(\d{2})$/;
+const TICKER_RE = /^(BGI|CCM|ICF|CNL|SJC|SOY|ETH)([FGHJKMNQUVXZ])(\d{2})$/;
 
 function colunaDe(x) {
   if (x >= 410 && x < 484) return "ajuste_atual";
