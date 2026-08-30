@@ -133,7 +133,9 @@ async function run() {
     ? { data: [], error: null }
     : await supabase
         .from("produtores")
-        .select("id, whatsapp, cultura_principal, uf, lat, lon, sinal_venda_ultimo_tone")
+        .select(
+          "id, whatsapp, cultura_principal, uf, lat, lon, sinal_venda_ultimo_tone, sinal_venda_para_enviar",
+        )
         .not("cultura_principal", "is", null)
         .not("uf", "is", null);
 
@@ -229,6 +231,12 @@ async function run() {
       update.sinal_venda_ultimo_texto = sinal.texto;
       novosParaEnviar++;
       console.log(`  -> Produtor ${produtor.id}: virou "bom momento pra vender" (${produtor.cultura_principal}/${produtor.uf}).`);
+    } else if (toneAtual !== "up" && produtor.sinal_venda_para_enviar) {
+      // Tinha um envio pendente (ex: n8n ainda esperando o template ser
+      // aprovado) e o sinal deixou de ser "up" antes de sair — cancela pra
+      // não mandar uma recomendação que já não é mais verdade.
+      update.sinal_venda_para_enviar = false;
+      console.log(`  -> Produtor ${produtor.id}: envio pendente cancelado (sinal não é mais "up").`);
     }
     if (toneAtual !== produtor.sinal_venda_ultimo_tone) tonesAtualizados++;
 
