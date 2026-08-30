@@ -1,0 +1,24 @@
+name: Checar sinal de venda
+
+on:
+  schedule:
+    # 12:30 UTC (09:30 BRT) — logo depois do ingest de preços da Conab
+    # (12:12 UTC) do mesmo dia, e bem depois do ingest de futuros B3 da
+    # noite anterior (23:47 UTC), então ambas as fontes já estão frescas.
+    - cron: "30 12 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - name: Install dependencies
+        run: bun install
+      - name: Run check
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: bun run check-sinal-venda.mjs
