@@ -10,16 +10,25 @@ if (DRY_RUN) {
 const supabase = DRY_RUN ? null : createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
 // A Sifreca só publica frete pra rotas "selecionadas" (curadas por eles, não
-// por município completo) e só pra estas culturas.
-const CULTURAS = ["soja", "milho"];
+// por município completo) e só pra estas culturas/produtos. `urlPath` é o
+// nome usado na URL da Sifreca; `cultura` é o valor gravado no banco — pro
+// etanol os dois divergem de propósito: a Sifreca separa etanol de cana,
+// mas o Safralume só tem "cana de açúcar" como cultura selecionável (é o
+// produto que de fato se transporta/negocia, cana crua não viaja longe), e
+// sem essa tradução o frete gravado ficaria órfão, sem produtor pra casar.
+const CULTURAS = [
+  { urlPath: "soja", cultura: "soja" },
+  { urlPath: "milho", cultura: "milho" },
+  { urlPath: "etanol", cultura: "cana de açúcar" },
+];
 
 function parseNumeroBR(s) {
   return parseFloat(s.trim().replace(/\./g, "").replace(",", "."));
 }
 
-async function coletarCultura(page, cultura) {
-  console.log(`Buscando frete de ${cultura}...`);
-  await page.goto(`https://sifreca.esalq.usp.br/mercado/${cultura}`, {
+async function coletarCultura(page, { urlPath, cultura }) {
+  console.log(`Buscando frete de ${cultura} (${urlPath})...`);
+  await page.goto(`https://sifreca.esalq.usp.br/mercado/${urlPath}`, {
     waitUntil: "networkidle",
     timeout: 60000,
   });
@@ -70,8 +79,8 @@ async function main() {
 
 async function run(page) {
   const todasRows = [];
-  for (const cultura of CULTURAS) {
-    const rows = await coletarCultura(page, cultura);
+  for (const item of CULTURAS) {
+    const rows = await coletarCultura(page, item);
     todasRows.push(...rows);
   }
 
