@@ -1,6 +1,8 @@
 import { createClient } from "@supabase/supabase-js";
 import { PDFParse } from "pdf-parse";
-import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -161,43 +163,36 @@ function extrairNumeroBoletim(textoPagina1) {
 }
 
 /**
- * Acha a manchete da página 2 (a análise/destaque) pelo tamanho de fonte —
- * não dá pra confiar na ordem de leitura do texto puro, porque o boletim de
- * cada cadeia intercala a manchete com título de gráfico/dado numérico em
- * ordens diferentes (testado e confirmado nas 4 cadeias). A manchete é
- * sempre o maior texto da página, uma linha só, sem dígito.
+ * Acha a manchete da página 2 (a análise/destaque), rodando num processo
+ * separado (manchete-worker.mjs) de propósito: o `pdf-parse` usado nesse
+ * mesmo arquivo carrega sua PRÓPRIA cópia interna do pdfjs-dist com a
+ * versão do worker fixada dentro do próprio pacote publicado — colide com a
+ * cópia daqui não importa a ordem de chamada nem deduplicação de
+ * node_modules ("The API version ... does not match the Worker version
+ * ..."), fazendo a manchete falhar toda semana, nas 4 cadeias. Só rodar em
+ * processos separados resolve de vez.
  */
 async function acharManchete(buf) {
-  const doc = await pdfjsLib.getDocument({ data: new Uint8Array(buf) }).promise;
-  if (doc.numPages < 2) return null;
-  const page = await doc.getPage(2);
-  const content = await page.getTextContent();
-
-  const linhas = [];
-  for (const it of content.items) {
-    if (!it.str.trim()) continue;
-    const y = it.transform[5];
-    let linha = linhas.find((l) => Math.abs(l.y - y) < 2);
-    if (!linha) {
-      linha = { y, itens: [] };
-      linhas.push(linha);
+  const dir = await mkdtemp(join(tmpdir(), "imea-boletim-"));
+  const caminho = join(dir, "boletim.pdf");
+  try {
+    await writeFile(caminho, buf);
+    const proc = Bun.spawn(["bun", join(import.meta.dirname, "manchete-worker.mjs"), caminho], {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const [stdout, stderr, exitCode] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+      proc.exited,
+    ]);
+    if (exitCode !== 0 || stderr.includes("ERRO:")) {
+      throw new Error(stderr.trim() || `manchete-worker saiu com código ${exitCode}`);
     }
-    linha.itens.push(it);
+    return stdout.trim() || null;
+  } finally {
+    await rm(dir, { recursive: true, force: true });
   }
-  for (const l of linhas) {
-    l.itens.sort((a, b) => a.transform[4] - b.transform[4]);
-    l.texto = l.itens.map((i) => i.str).join("");
-    l.tamFonte = Math.max(...l.itens.map((i) => Math.abs(i.transform[0])));
-  }
-
-  const candidatas = linhas
-    .filter((l) => l.tamFonte >= 14)
-    .filter((l) => /[a-zà-úA-ZÀ-Ú]/.test(l.texto))
-    .filter((l) => !/\d/.test(l.texto))
-    .filter((l) => l.texto.trim().length >= 8 && l.texto.trim().length <= 80)
-    .sort((a, b) => b.tamFonte - a.tamFonte);
-
-  return candidatas[0]?.texto.trim() ?? null;
 }
 
 function pareceProsa(linha) {
