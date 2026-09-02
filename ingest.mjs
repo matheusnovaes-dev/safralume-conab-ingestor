@@ -289,7 +289,27 @@ async function checkAlertas(precoRows) {
   }
 }
 
-main().catch((err) => {
+// O site da Conab é uma SPA real (não uma API) — de vez em quando um clique
+// ou navegação estoura o timeout do Playwright por lentidão passageira do
+// site, não por erro de lógica (achado em produção: ~1 em cada 5 execuções
+// agendadas, sempre recuperando sozinho na tentativa seguinte, só que até
+// 1 dia inteiro depois). Tenta de novo com um browser novo antes de desistir
+// de verdade, em vez de esperar o próximo cron.
+const TENTATIVAS = 3;
+async function runComRetry() {
+  for (let i = 1; i <= TENTATIVAS; i++) {
+    try {
+      await main();
+      return;
+    } catch (err) {
+      if (i === TENTATIVAS) throw err;
+      console.error(`Tentativa ${i}/${TENTATIVAS} falhou, tentando de novo em 10s:`, err.message ?? err);
+      await new Promise((r) => setTimeout(r, 10_000));
+    }
+  }
+}
+
+runComRetry().catch((err) => {
   console.error(err);
   process.exit(1);
 });

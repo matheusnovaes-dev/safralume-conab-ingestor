@@ -218,11 +218,18 @@ async function gravar(rows, rotulo) {
   if (!DRY_RUN) await checkAlertas(dedupedRows);
 }
 
-const semanal = await coletarSemanal();
-await gravar(semanal, "semanal");
+async function run() {
+  const semanal = await coletarSemanal();
+  await gravar(semanal, "semanal");
 
-if (FAZER_BACKFILL) {
-  console.log("\n--backfill informado — coletando histórico completo (1995-hoje)...");
-  const historico = await coletarHistorico();
-  await gravar(historico, "histórico");
+  if (FAZER_BACKFILL) {
+    console.log("\n--backfill informado — coletando histórico completo (1995-hoje)...");
+    const historico = await coletarHistorico();
+    await gravar(historico, "histórico");
+  }
 }
+
+run().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

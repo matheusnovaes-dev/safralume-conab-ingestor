@@ -168,22 +168,39 @@ async function run() {
     return;
   }
 
+  // Dedupe pela mesma chave usada no upsert — Postgres rejeita um upsert que
+  // tenta afetar a mesma linha (mesmo codigo_vencimento+data_pregao) duas
+  // vezes no mesmo comando. Bug real, achado em produção: o mesmo ticker às
+  // vezes aparece extraído mais de uma vez, e todo run agendado vinha
+  // falhando com "ON CONFLICT DO UPDATE command cannot affect row a second
+  // time" — a tabela nunca tinha um dado real gravado por causa disso.
+  const byKey = new Map();
+  for (const row of rows) {
+    byKey.set(`${row.codigo_vencimento}|${row.data_pregao}`, row);
+  }
+  const dedupedRows = [...byKey.values()];
+  if (dedupedRows.length !== rows.length) {
+    console.log(
+      `${rows.length - dedupedRows.length} linha(s) duplicada(s) removida(s) (${dedupedRows.length} restantes).`,
+    );
+  }
+
   if (DRY_RUN) {
     console.log("DRY RUN — amostra:");
-    console.log(JSON.stringify(rows.slice(0, 5), null, 2));
+    console.log(JSON.stringify(dedupedRows.slice(0, 5), null, 2));
     return;
   }
 
   console.log("Gravando no projeto Supabase:", new URL(SUPABASE_URL).host);
   const { error } = await supabase
     .from("b3_futuros")
-    .upsert(rows, { onConflict: "codigo_vencimento,data_pregao" });
+    .upsert(dedupedRows, { onConflict: "codigo_vencimento,data_pregao" });
 
   if (error) {
     console.error("Erro ao gravar:", error);
     process.exit(1);
   }
-  console.log("OK. Linhas gravadas:", rows.length);
+  console.log("OK. Linhas gravadas:", dedupedRows.length);
 }
 
 run().catch((err) => {
