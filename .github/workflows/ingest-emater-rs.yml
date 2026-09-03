@@ -1,10 +1,14 @@
 name: Ingest Emater/RS weekly prices
 
 on:
-  # Sem schedule por enquanto: emater.tche.br bloqueia IP de datacenter/fora
-  # do Brasil (confirmado: falha tanto no runner do GitHub Actions quanto no
-  # nosso VPS Hetzner na Alemanha; funciona normalmente de IP residencial/BR).
-  # Rodar via workflow_dispatch manual até decidirmos proxy BR ou VPS BR.
+  # Sem schedule aqui de propósito: emater.tche.br bloqueia IP de datacenter
+  # fora do Brasil (confirmado: falha no runner do GitHub Actions e no VPS
+  # Hetzner na Alemanha). Resolvido 2026-09-03 rodando numa VM Oracle Cloud
+  # "Always Free" na região São Paulo (confirmado reachable de lá) — é essa
+  # VM que roda o ingest de verdade agora, via cron diário (08:15 UTC), não
+  # o GitHub Actions. Ver reference-safralume-systems na memória do Claude
+  # pro IP/acesso da VM. workflow_dispatch fica só como fallback manual pra
+  # debug — vai continuar falhando com ConnectionRefused se disparado daqui.
   workflow_dispatch: {}
 
 jobs:
