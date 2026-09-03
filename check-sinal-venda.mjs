@@ -159,6 +159,7 @@ async function run() {
       .from("precos")
       .select("preco, data_referencia, produto, uf")
       .ilike("produto", `%${cultura}%`)
+      .eq("regiao", "")
       .gte("data_referencia", desdeIso)
       .order("data_referencia", { ascending: true });
     precosPorCultura.set(cultura, serieUnica(data ?? []));
