@@ -1,0 +1,23 @@
+name: Ingest Emater/RS weekly prices
+
+on:
+  schedule:
+    # Sexta às 19h America/Sao_Paulo (UTC-3) = 22h UTC — o boletim geralmente
+    # sai na quarta/quinta, sexta dá folga de sobra.
+    - cron: "0 22 * * 5"
+  workflow_dispatch: {}
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - name: Install dependencies
+        run: bun install
+      - name: Run ingestion
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: bun run ingest-emater-rs.mjs
