@@ -108,9 +108,16 @@ async function bootstrap(page) {
   await page.locator("body").click({ position: { x: 10, y: 10 } });
   await page.waitForTimeout(600);
 
+  // O clique aqui só serve pra habilitar o botão "Consultar" — o filtro de
+  // UF de verdade vem do array UFS, sobrescrito direto no corpo do POST em
+  // fetchAllPages() (não depende do que foi marcado na tela). "Selecionar
+  // Todos" fica sempre no topo da lista, então não quebra se a Conab mudar
+  // a lista pra virtualizada/paginada (visto na prática: em algum momento a
+  // lista passou a renderizar só 2-3 UFs por vez, e "GOIAS" específico
+  // parou de estar sempre visível/clicável).
   await page.locator('.br-select:has-text("Unidade da federação")').first().click();
   await page.waitForTimeout(400);
-  await page.getByText("GOIAS", { exact: true }).click();
+  await page.locator('label[for="unidadeFederacao-all"]').click();
   await page.locator("body").click({ position: { x: 10, y: 10 } });
   await page.waitForTimeout(600);
 
