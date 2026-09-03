@@ -124,7 +124,7 @@ async function run() {
   console.log("Gravando no projeto Supabase:", new URL(SUPABASE_URL).host);
   const { error } = await supabase
     .from("precos")
-    .upsert(dedupedRows, { onConflict: "produto,uf,data_referencia" });
+    .upsert(dedupedRows, { onConflict: "produto,uf,regiao,data_referencia" });
   if (error) {
     console.error("Erro ao gravar:", error);
     process.exit(1);

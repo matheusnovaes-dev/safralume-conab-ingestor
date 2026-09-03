@@ -205,7 +205,7 @@ async function gravar(rows, rotulo) {
   for (let i = 0; i < dedupedRows.length; i += CHUNK) {
     const chunk = dedupedRows.slice(i, i + CHUNK);
     const { error } = await supabase.from("precos").upsert(chunk, {
-      onConflict: "produto,uf,data_referencia",
+      onConflict: "produto,uf,regiao,data_referencia",
     });
     if (error) {
       console.error(`Erro ao gravar lote ${i}-${i + chunk.length} (${rotulo}):`, error);
