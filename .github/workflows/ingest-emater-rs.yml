@@ -1,10 +1,10 @@
 name: Ingest Emater/RS weekly prices
 
 on:
-  schedule:
-    # Sexta às 19h America/Sao_Paulo (UTC-3) = 22h UTC — o boletim geralmente
-    # sai na quarta/quinta, sexta dá folga de sobra.
-    - cron: "0 22 * * 5"
+  # Sem schedule por enquanto: emater.tche.br bloqueia IP de datacenter/fora
+  # do Brasil (confirmado: falha tanto no runner do GitHub Actions quanto no
+  # nosso VPS Hetzner na Alemanha; funciona normalmente de IP residencial/BR).
+  # Rodar via workflow_dispatch manual até decidirmos proxy BR ou VPS BR.
   workflow_dispatch: {}
 
 jobs:
