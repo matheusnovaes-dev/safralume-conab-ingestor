@@ -1,0 +1,25 @@
+name: Checar alertas de preço
+
+on:
+  schedule:
+    # De 2 em 2 horas — o n8n manda a mensagem de alerta a cada hora
+    # (disparado_em setado), então rodar a cada 2h garante que um alerta
+    # recém-disparado não fique esperando mais de ~1h extra pra ser
+    # detectado e entrar na fila de envio.
+    - cron: "15 */2 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - name: Install dependencies
+        run: bun install
+      - name: Run check
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: bun run check-alertas-preco.mjs
