@@ -1,0 +1,23 @@
+name: Ingest IEA-SP daily prices
+
+on:
+  schedule:
+    # Todo dia às 20h America/Sao_Paulo (UTC-3) = 23h UTC — dá folga pro
+    # boletim do dia (quando sair) já estar publicado.
+    - cron: "0 23 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - name: Install dependencies
+        run: bun install
+      - name: Run ingestion
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: bun run ingest-iea-sp.mjs
