@@ -1,0 +1,23 @@
+name: Ingest EPAGRI/CEPA (SC) prices
+
+on:
+  schedule:
+    # Segunda às 18h America/Sao_Paulo (UTC-3) = 21h UTC — a planilha semanal
+    # fecha aos sábados, segunda dá folga pra publicação sair.
+    - cron: "0 21 * * 1"
+  workflow_dispatch: {}
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - name: Install dependencies
+        run: bun install
+      - name: Run ingestion
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: bun run ingest-epagri-sc.mjs
