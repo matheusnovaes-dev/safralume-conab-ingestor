@@ -44,13 +44,24 @@ async function run() {
     return;
   }
 
-  const { data: origens, error } = await supabase
-    .from("fretes")
-    .select("municipio_origem, uf_origem")
-    .is("lat_origem", null);
-  if (error) {
-    console.error("Erro ao buscar origens:", error);
-    process.exit(1);
+  // Paginado de propósito: o default do Supabase é devolver no máximo 1000
+  // linhas por select. Bug real achado testando — sem paginação, a lista de
+  // origens distintas vinha cortada (faltou Toledo/PR, Ponta Grossa/PR e
+  // outras que só apareceriam depois da linha 1000).
+  const origens = [];
+  const TAMANHO_PAGINA = 1000;
+  for (let inicio = 0; ; inicio += TAMANHO_PAGINA) {
+    const { data, error } = await supabase
+      .from("fretes")
+      .select("municipio_origem, uf_origem")
+      .is("lat_origem", null)
+      .range(inicio, inicio + TAMANHO_PAGINA - 1);
+    if (error) {
+      console.error("Erro ao buscar origens:", error);
+      process.exit(1);
+    }
+    origens.push(...(data ?? []));
+    if (!data || data.length < TAMANHO_PAGINA) break;
   }
 
   const distintas = [...new Map((origens ?? []).map((r) => [`${r.municipio_origem}|${r.uf_origem}`, r])).values()];
