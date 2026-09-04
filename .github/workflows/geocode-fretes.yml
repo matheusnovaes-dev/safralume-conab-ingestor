@@ -1,0 +1,25 @@
+name: Geocodificar origens de frete
+
+on:
+  schedule:
+    # Terça 10:00 America/Sao_Paulo (UTC-3) = 13:00 UTC — logo depois dos
+    # dois ingests de frete (Sifreca segunda, Conab terça). Só processa
+    # linhas sem coordenada ainda, então é barato mesmo rodando toda
+    # semana — a maioria das rotas já vai estar geocodificada.
+    - cron: "0 13 * * 2"
+  workflow_dispatch: {}
+
+jobs:
+  geocode:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - name: Install dependencies
+        run: bun install
+      - name: Run geocoding
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: bun run geocode-fretes.mjs
