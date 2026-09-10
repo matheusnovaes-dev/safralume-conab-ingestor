@@ -1,0 +1,25 @@
+name: Ingest janela de plantio (ZARC/MAPA)
+
+on:
+  schedule:
+    # Semanal (segunda, 08:00 UTC) — a Tábua de Risco é publicada por
+    # safra/Portaria, não diariamente; atualização semanal já cobre
+    # qualquer Portaria nova sem reprocessar o arquivo (211MB, ~470 mil
+    # linhas relevantes) com mais frequência do que precisa.
+    - cron: "0 8 * * 1"
+  workflow_dispatch: {}
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - name: Install dependencies
+        run: bun install
+      - name: Run ingestion
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: bun run ingest-zarc.mjs
