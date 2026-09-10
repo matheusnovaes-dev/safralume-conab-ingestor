@@ -185,22 +185,56 @@ async function run() {
     );
   }
 
+  // Sanidade contra coluna trocada: achado real 2026-09-10 — em alguns
+  // pregões o pdf.js funde/desalinha as colunas do PDF de um jeito que faz
+  // "ajuste_atual" vir de um bucket de x errado (às vezes pegando o valor de
+  // "variação"), produzindo número certo de tipo mas ordem de grandeza
+  // absurda (ex: soja em USD 0,18 em vez de ~29, boi em R$0,25 em vez de
+  // ~R$358) — e o "ajuste_anterior" da MESMA linha vem igualmente errado,
+  // então os dois nunca ficam plausíveis um contra o outro num pregão real
+  // (nenhuma dessas commodities se move mais que uma fração disso num dia).
+  // Preferível não gravar a linha a gravar um número inventado que alimenta
+  // resposta de preço E o sinal de venda.
+  const FATOR_MAX_1_DIA = 2; // ninguém dobra nem cai pela metade num pregão
+  const sanas = dedupedRows.filter((row) => {
+    const atual = row.preco_ajuste_atual;
+    const anterior = row.preco_ajuste_anterior;
+    if (atual == null || anterior == null || anterior === 0) return true;
+    const razao = Math.abs(atual / anterior);
+    const plausivel = razao >= 1 / FATOR_MAX_1_DIA && razao <= FATOR_MAX_1_DIA;
+    if (!plausivel) {
+      console.log(
+        `Descartada (ajuste_atual/ajuste_anterior implausível): ${row.produto} ${row.codigo_vencimento} atual=${atual} anterior=${anterior}`,
+      );
+    }
+    return plausivel;
+  });
+  if (sanas.length !== dedupedRows.length) {
+    console.log(
+      `${dedupedRows.length - sanas.length} linha(s) descartada(s) por falha de sanidade (${sanas.length} restantes).`,
+    );
+  }
+  if (sanas.length === 0) {
+    console.log("Nenhuma linha passou na sanidade. Abortando sem gravar.");
+    return;
+  }
+
   if (DRY_RUN) {
     console.log("DRY RUN — amostra:");
-    console.log(JSON.stringify(dedupedRows.slice(0, 5), null, 2));
+    console.log(JSON.stringify(sanas.slice(0, 5), null, 2));
     return;
   }
 
   console.log("Gravando no projeto Supabase:", new URL(SUPABASE_URL).host);
   const { error } = await supabase
     .from("b3_futuros")
-    .upsert(dedupedRows, { onConflict: "codigo_vencimento,data_pregao" });
+    .upsert(sanas, { onConflict: "codigo_vencimento,data_pregao" });
 
   if (error) {
     console.error("Erro ao gravar:", error);
     process.exit(1);
   }
-  console.log("OK. Linhas gravadas:", dedupedRows.length);
+  console.log("OK. Linhas gravadas:", sanas.length);
 }
 
 run().catch((err) => {
