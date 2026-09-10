@@ -88,14 +88,25 @@ async function extrairFuturos(buf) {
     // A "Negócios consolidados do pregão" (a tabela que queremos, com preço
     // de ajuste por instrumento) é seguida no mesmo capítulo por duas outras
     // tabelas — "...não regular" (negócios de balcão/não regulares) e
-    // "Contratos em aberto" (posição em aberto) — com layouts de coluna
-    // diferentes. Parar assim que qualquer uma delas aparecer evita ler os
-    // mesmos tickers com o bucket de coluna errado (bug real, achado
-    // testando: sem isso cada ticker aparecia 2-3x com valores errados).
-    const tituloArea = content.items.slice(0, 20).map((i) => i.str).join(" ");
-    if (tituloArea.includes("não regular") || tituloArea.includes("Contratos em aberto")) {
-      page.cleanup();
-      break;
+    // "Contratos em aberto" (posição em aberto) — com layout de coluna
+    // DIFERENTE (tem uma coluna extra "Segmento" que desloca tudo à
+    // direita). Causa raiz real, achada 2026-09-10: o título dessas tabelas
+    // às vezes aparece NO MEIO de uma página (a tabela certa termina e a
+    // errada já começa antes do fim da página) — checar só os primeiros 20
+    // itens da página (como antes) deixava passar essas linhas erradas, que
+    // aí sobrescreviam silenciosamente o valor certo do mesmo ticker via o
+    // dedupe por codigo_vencimento+data_pregao (confirmado comparando
+    // byte a byte: SJC/BGI/CCM/ETH/ICF com número absurdo vinham
+    // exatamente da tabela "não regular" da mesma página). Em vez de
+    // parar a página inteira, acha a coordenada Y exata onde o título
+    // aparece e ignora só as linhas ABAIXO dela nessa página — e já para a
+    // varredura de vez, porque tudo daí pra frente é tabela errada.
+    let yLimiteTitulo = null;
+    for (const item of content.items) {
+      if (item.str.includes("não regular") || item.str.includes("Contratos em aberto")) {
+        const y = Math.round(item.transform[5]);
+        if (yLimiteTitulo == null || y > yLimiteTitulo) yLimiteTitulo = y;
+      }
     }
 
     const porLinha = new Map();
@@ -106,7 +117,8 @@ async function extrairFuturos(buf) {
       porLinha.get(y).push({ x, str: item.str });
     }
 
-    for (const itens of porLinha.values()) {
+    for (const [yLinha, itens] of porLinha) {
+      if (yLimiteTitulo != null && yLinha <= yLimiteTitulo) continue;
       itens.sort((a, b) => a.x - b.x);
       const primeiro = itens[0];
       if (!primeiro || primeiro.x > 80) continue;
@@ -140,6 +152,8 @@ async function extrairFuturos(buf) {
       });
     }
     page.cleanup();
+
+    if (yLimiteTitulo != null) break; // achou a tabela errada nessa página — resto do PDF é só ela
   }
   return linhas;
 }
