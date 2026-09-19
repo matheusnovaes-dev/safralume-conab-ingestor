@@ -1,0 +1,24 @@
+name: Ingest leite (Conseleite MG/RS/MT)
+
+on:
+  schedule:
+    # Todo dia, 12:30 UTC. O valor de referência sai no começo do mês
+    # (projeção) e é fechado no meio dele; rodar diário é barato e não
+    # depende de acertar a data da publicação.
+    - cron: "30 12 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - name: Install dependencies
+        run: bun install
+      - name: Run ingestion
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: bun run ingest-conseleite.mjs

@@ -32,6 +32,12 @@ const MAPA_PRODUTOS = {
   "Trigo": { produto: "TRIGO (DERAL-PR) (60 kg)", unidade: "60 kg" },
   "Arroz em casca irrigado": { produto: "ARROZ EM CASCA IRRIGADO (DERAL-PR) (60 kg)", unidade: "60 kg" },
   "Cana de acucar": { produto: "CANA-DE-AÇÚCAR (DERAL-PR) (t)", unidade: "t" },
+  // Único leite com preço semanal do produtor entre as fontes que temos (as
+  // outras — Cepea, Conseleite — são mensais). O asterisco vem da planilha:
+  // "preço recebido pelo produtor coletado nos núcleos regionais e ponderado
+  // pela produção". Variante própria: não é a mesma medida do Conab (AC) nem
+  // da EPAGRI (SC).
+  "Leite *": { produto: "LEITE (DERAL-PR) (l)", unidade: "l" },
 };
 
 // Aba do arquivo histórico (uma por produto) -> chave do MAPA_PRODUTOS acima.
@@ -45,6 +51,7 @@ const MAPA_ABAS_HISTORICO = {
   TRIGO: "Trigo",
   "ARROZ IRRIGADO": "Arroz em casca irrigado",
   "CANA-DE-AÇÚCAR": "Cana de acucar",
+  LEITE: "Leite *",
 };
 
 const MESES_ABREV = ["JAN", "FEV", "MAR", "ABR", "MAI", "JUN", "JUL", "AGO", "SET", "OUT", "NOV", "DEZ"];
