@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { escolherFonte, padraoDeProduto, ultimaDataRegional } from "./preco-fonte.mjs";
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -158,7 +159,7 @@ async function run() {
     const { data } = await supabase
       .from("precos")
       .select("preco, data_referencia, produto, uf")
-      .ilike("produto", `%${cultura}%`)
+      .ilike("produto", padraoDeProduto(cultura))
       .eq("regiao", "")
       .gte("data_referencia", desdeIso)
       .order("data_referencia", { ascending: true });
@@ -199,12 +200,28 @@ async function run() {
   }
 
   console.log(`Checando sinal de venda de ${produtores.length} produtor(es)...`);
+  const ultimaRegionalPorPar = new Map();
   let novosParaEnviar = 0;
   let tonesAtualizados = 0;
 
   for (const produtor of produtores) {
     const serie = (precosPorCultura.get(produtor.cultura_principal) ?? []).filter((r) => r.uf === produtor.uf);
     if (serie.length === 0) continue;
+
+    // Série do estado defasada (ex: Conab de MT parada 4 semanas) não pode
+    // gerar "bom momento pra vender" — mesma escolha de fonte do painel e do
+    // bot. Sem sinal é melhor que sinal em cima de preço velho.
+    const chaveRegional = `${produtor.cultura_principal}|${produtor.uf}`;
+    if (!ultimaRegionalPorPar.has(chaveRegional)) {
+      ultimaRegionalPorPar.set(
+        chaveRegional,
+        await ultimaDataRegional(supabase, produtor.cultura_principal, produtor.uf),
+      );
+    }
+    if (escolherFonte(serie.at(-1).data_referencia, ultimaRegionalPorPar.get(chaveRegional)) === "regional") {
+      console.log(`  (sem sinal) ${produtor.cultura_principal}/${produtor.uf}: preço do estado defasado, dado regional mais novo.`);
+      continue;
+    }
 
     const precos = serie.map((p) => p.preco);
     const min = Math.min(...precos);

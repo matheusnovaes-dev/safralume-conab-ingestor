@@ -1,5 +1,6 @@
 import { chromium } from "playwright";
 import { createClient } from "@supabase/supabase-js";
+import { checarAlertas } from "./check-alertas-preco.mjs";
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -255,45 +256,13 @@ async function run(page) {
   await checkAlertas(dedupedRows);
 }
 
-async function checkAlertas(precoRows) {
-  const latestByUf = new Map();
-  for (const row of precoRows) {
-    const current = latestByUf.get(row.uf);
-    if (!current || row.data_referencia > current.data_referencia) {
-      latestByUf.set(row.uf, row);
-    }
-  }
-
-  const { data: alertas, error } = await supabase
-    .from("alertas_preco")
-    .select("id, cultura, uf, limite, direcao")
-    .eq("ativo", true)
-    .is("disparado_em", null);
-
-  if (error) {
-    console.error("Erro ao buscar alertas:", error);
-    return;
-  }
-  if (!alertas || alertas.length === 0) return;
-
-  console.log(`\nChecando ${alertas.length} alerta(s) ativo(s)...`);
-  for (const alerta of alertas) {
-    const preco = latestByUf.get(alerta.uf);
-    if (!preco || !preco.produto.toUpperCase().includes(alerta.cultura.toUpperCase())) continue;
-
-    const disparou =
-      alerta.direcao === "acima" ? preco.preco >= alerta.limite : preco.preco <= alerta.limite;
-
-    if (disparou) {
-      console.log(
-        `  -> Alerta ${alerta.id} disparado: ${alerta.cultura}/${alerta.uf} ${alerta.direcao} de ${alerta.limite} (preço atual: ${preco.preco})`,
-      );
-      await supabase
-        .from("alertas_preco")
-        .update({ disparado_em: new Date().toISOString() })
-        .eq("id", alerta.id);
-    }
-  }
+// Antes: escolhia UMA linha por UF (a mais nova de qualquer produto) e só
+// disparava se ela por acaso fosse da cultura do alerta — dava falso disparo
+// (ex: "milho de pipoca" R$103 disparando alerta de milho de MT, que vale
+// ~R$51) e ignorava a fonte mais recente. Agora usa o mesmo checador do
+// workflow agendado (fonte mais recente, variante principal).
+async function checkAlertas() {
+  await checarAlertas(supabase);
 }
 
 // O site da Conab é uma SPA real (não uma API) — de vez em quando um clique
