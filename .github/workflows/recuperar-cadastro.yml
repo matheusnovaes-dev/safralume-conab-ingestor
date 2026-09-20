@@ -1,0 +1,19 @@
+name: Recuperar cadastro (WhatsApp)
+
+on:
+  schedule:
+    # A cada 30 minutos. O endpoint só envia se a automação estiver ligada em
+    # automacoes_config, só das 8h às 21h de Brasília, e no máximo 20 por rodada.
+    - cron: "*/30 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  recuperar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Chamar o endpoint de recuperação de cadastro
+        run: |
+          curl -sf -X POST \
+            -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" \
+            https://www.safralume.com.br/api/cron/recuperar-cadastro
