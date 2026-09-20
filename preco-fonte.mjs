@@ -32,9 +32,28 @@ export function mediaDePracas(precos) {
 const PRODUTO_PRINCIPAL = {
   soja: "SOJA EM GRÃOS (60 kg)",
   milho: "MILHO EM GRÃOS (60 kg)",
+  boi: "BOI GORDO (15 kg)",
 };
+// Nomes que o produtor usa pra uma cultura que a base chama de outro jeito (a
+// carne bovina é o boi gordo). Mesmo mapa do app (src/config/culturas.ts).
+const ALIAS_CULTURA = {
+  "carne bovina": "boi",
+  "carne de boi": "boi",
+  "boi gordo": "boi",
+  gado: "boi",
+  "gado de corte": "boi",
+  bovino: "boi",
+  bovinos: "boi",
+  "pecuária de corte": "boi",
+};
+export function normalizarCultura(cultura) {
+  const c = String(cultura).trim().toLowerCase();
+  return ALIAS_CULTURA[c] ?? c;
+}
+
 export function padraoDeProduto(cultura) {
-  return PRODUTO_PRINCIPAL[String(cultura).trim().toLowerCase()] ?? `%${cultura}%`;
+  const c = normalizarCultura(cultura);
+  return PRODUTO_PRINCIPAL[c] ?? `%${c}%`;
 }
 
 /** Última data regional (praça) de uma cultura numa UF, ou null. */

@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import { escolherFonte, padraoDeProduto, ultimaDataRegional } from "./preco-fonte.mjs";
+import { escolherFonte, padraoDeProduto, ultimaDataRegional, normalizarCultura } from "./preco-fonte.mjs";
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -149,6 +149,8 @@ async function run() {
     return;
   }
 
+  // "carne bovina", "gado" etc. são o boi gordo na base.
+  for (const p of produtores) p.cultura_principal = normalizarCultura(p.cultura_principal);
   const culturas = new Set(produtores.map((p) => p.cultura_principal));
   const ufs = new Set(produtores.map((p) => p.uf));
 
