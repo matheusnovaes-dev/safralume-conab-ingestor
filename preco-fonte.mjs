@@ -45,6 +45,8 @@ export async function ultimaDataRegional(supabase, cultura, uf) {
     .ilike("produto", padraoDeProduto(cultura))
     .eq("uf", uf)
     .neq("regiao", "")
+    // Praça CIF (porto/indústria) é outro nível de preço: fora do preço do interior.
+    .not("regiao", "ilike", "%cif%")
     .order("data_referencia", { ascending: false })
     .limit(1);
   return data?.[0]?.data_referencia ?? null;
@@ -72,6 +74,7 @@ export async function buscarPrecoAtual(supabase, cultura, uf) {
       .ilike("produto", padrao)
       .eq("uf", uf)
       .neq("regiao", "")
+      .not("regiao", "ilike", "%cif%")
       .order("data_referencia", { ascending: false })
       .limit(60),
   ]);
