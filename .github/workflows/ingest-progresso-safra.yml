@@ -1,0 +1,24 @@
+name: Ingest Progresso de Safra (Conab)
+
+on:
+  schedule:
+    # Toda segunda-feira, 13:00 UTC — a Conab publica o arquivo da semana
+    # (segunda a domingo anterior) logo no início da semana seguinte
+    # (achado real: semana 21-27/09 apareceu já em 28/09, uma segunda).
+    - cron: "0 13 * * 1"
+  workflow_dispatch: {}
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - name: Install dependencies
+        run: bun install
+      - name: Run ingestion
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: bun run ingest-progresso-safra.mjs
