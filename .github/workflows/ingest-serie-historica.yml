@@ -1,0 +1,24 @@
+name: Ingest Série Histórica de Safra (Conab)
+
+on:
+  schedule:
+    # Dia 15 de cada mês, 14:00 UTC — a Conab atualiza a estimativa de safra
+    # em levantamentos mensais (por volta do dia 8-12), esse horário dá
+    # margem. Não precisa de cadência diária: é dado de safra, não de preço.
+    - cron: "0 14 15 * *"
+  workflow_dispatch: {}
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - name: Install dependencies
+        run: bun install
+      - name: Run ingestion
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: bun run ingest-serie-historica.mjs
