@@ -1,0 +1,25 @@
+name: Ingest ocorrências de ferrugem asiática
+
+on:
+  schedule:
+    # Segunda e quinta, 13:00 UTC — mais frequente que os ingests de preço
+    # de propósito: é alerta de doença (quanto antes o produtor souber de
+    # foco confirmado perto dele, melhor), e o payload é pequeno (~5.500
+    # linhas no total), então rodar 2x/semana é barato pro servidor deles.
+    - cron: "0 13 * * 1,4"
+  workflow_dispatch: {}
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - name: Install dependencies
+        run: bun install
+      - name: Run ingestion
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: bun run ingest-ferrugem-asiatica.mjs
