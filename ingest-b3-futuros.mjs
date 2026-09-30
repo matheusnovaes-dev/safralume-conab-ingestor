@@ -56,24 +56,44 @@ function paraISO(date) {
   return date.toISOString().slice(0, 10);
 }
 
-async function buscarPdfMaisRecente() {
+async function buscarPdf(dataISO) {
+  const dataCompacta = dataISO.replace(/-/g, "");
+  const url = `${BASE_URL}/${dataISO}/BDI_03-4_${dataCompacta}.pdf`;
+  const res = await fetch(url, { headers: { "User-Agent": UA } });
+  if (!res.ok) return null;
+  const buf = new Uint8Array(await res.arrayBuffer());
+  if (buf.length <= 10000) return null;
+  return buf;
+}
+
+// Acumula em vez de parar no primeiro achado: achado real 2026-09-30 —
+// quando o boletim de um dia útil ainda não estava publicado às 23:47 UTC
+// (horário do cron), o dia ficava faltando pra sempre, porque a corrida
+// seguinte já achava o boletim de um dia mais novo e nunca voltava a
+// checar o anterior. Rodar todo dia útil olhando pra trás e regravando
+// (upsert é idempotente) fecha o buraco sozinho, sem precisar de reparo
+// manual.
+async function buscarPdfsRecentes(dataForcada) {
+  if (dataForcada) {
+    const buf = await buscarPdf(dataForcada);
+    if (!buf) throw new Error(`Boletim de ${dataForcada} não encontrado.`);
+    console.log(`Boletim encontrado para ${dataForcada} (${buf.length} bytes, data forçada).`);
+    return [{ buf, dataPregao: dataForcada }];
+  }
   const hoje = new Date();
+  const achados = [];
   for (let i = 0; i < 10; i++) {
     const d = new Date(hoje);
     d.setUTCDate(d.getUTCDate() - i);
     const dataISO = paraISO(d);
-    const dataCompacta = dataISO.replace(/-/g, "");
-    const url = `${BASE_URL}/${dataISO}/BDI_03-4_${dataCompacta}.pdf`;
-    const res = await fetch(url, { headers: { "User-Agent": UA } });
-    if (res.ok) {
-      const buf = new Uint8Array(await res.arrayBuffer());
-      if (buf.length > 10000) {
-        console.log(`Boletim encontrado para ${dataISO} (${buf.length} bytes).`);
-        return { buf, dataPregao: dataISO };
-      }
+    const buf = await buscarPdf(dataISO);
+    if (buf) {
+      console.log(`Boletim encontrado para ${dataISO} (${buf.length} bytes).`);
+      achados.push({ buf, dataPregao: dataISO });
     }
   }
-  throw new Error("Nenhum boletim encontrado nos últimos 10 dias.");
+  if (achados.length === 0) throw new Error("Nenhum boletim encontrado nos últimos 10 dias.");
+  return achados;
 }
 
 async function extrairFuturos(buf) {
@@ -158,8 +178,7 @@ async function extrairFuturos(buf) {
   return linhas;
 }
 
-async function run() {
-  const { buf, dataPregao } = await buscarPdfMaisRecente();
+async function processarPdf(buf, dataPregao) {
   const linhas = await extrairFuturos(buf);
   console.log(`${linhas.length} contratos extraídos (pregão de ${dataPregao}).`);
 
@@ -178,8 +197,8 @@ async function run() {
   }));
 
   if (rows.length === 0) {
-    console.log("Nenhuma linha extraída. Abortando sem gravar.");
-    return;
+    console.log("Nenhuma linha extraída.");
+    return [];
   }
 
   // Dedupe pela mesma chave usada no upsert — Postgres rejeita um upsert que
@@ -229,26 +248,39 @@ async function run() {
     );
   }
   if (sanas.length === 0) {
-    console.log("Nenhuma linha passou na sanidade. Abortando sem gravar.");
+    console.log("Nenhuma linha passou na sanidade.");
+  }
+  return sanas;
+}
+
+async function run() {
+  const pdfs = await buscarPdfsRecentes(process.argv[2]);
+  const todasAsLinhas = [];
+  for (const { buf, dataPregao } of pdfs) {
+    todasAsLinhas.push(...(await processarPdf(buf, dataPregao)));
+  }
+
+  if (todasAsLinhas.length === 0) {
+    console.log("Nenhuma linha pra gravar em nenhum dos boletins encontrados.");
     return;
   }
 
   if (DRY_RUN) {
     console.log("DRY RUN — amostra:");
-    console.log(JSON.stringify(sanas.slice(0, 5), null, 2));
+    console.log(JSON.stringify(todasAsLinhas.slice(0, 5), null, 2));
     return;
   }
 
   console.log("Gravando no projeto Supabase:", new URL(SUPABASE_URL).host);
   const { error } = await supabase
     .from("b3_futuros")
-    .upsert(sanas, { onConflict: "codigo_vencimento,data_pregao" });
+    .upsert(todasAsLinhas, { onConflict: "codigo_vencimento,data_pregao" });
 
   if (error) {
     console.error("Erro ao gravar:", error);
     process.exit(1);
   }
-  console.log("OK. Linhas gravadas:", sanas.length);
+  console.log("OK. Linhas gravadas:", todasAsLinhas.length);
 }
 
 run().catch((err) => {
