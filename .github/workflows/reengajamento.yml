@@ -1,0 +1,19 @@
+name: Lembrete de retomada (produtor sumiu)
+
+on:
+  schedule:
+    # Todo dia às 13:30 UTC (10:30 BRT) — depois do aviso de trial (12:00
+    # UTC), pra não competir pela mesma janela de horário de mensagem.
+    - cron: "30 13 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  reengajar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Chamar o endpoint de reengajamento do painel
+        run: |
+          curl -sf -X POST \
+            -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" \
+            https://www.safralume.com.br/api/cron/reengajamento
