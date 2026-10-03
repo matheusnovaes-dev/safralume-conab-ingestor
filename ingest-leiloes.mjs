@@ -70,6 +70,12 @@ function extrairDetalhe(html) {
     /<a href="(https?:\/\/(?!wa\.me)[^"]+)"[^>]*target="_blank"[^>]*>\s*<svg[^>]*>\s*<circle cx="12" cy="12" r="10">/,
   );
   const canalMatch = html.match(/upload\/canais\/([^-."]+)/);
+  // Bloco "Oferta" (o que vai ser leiloado) — texto livre do leiloeiro,
+  // às vezes já vem com a quantidade (ex: "OFERTA DE 200 TOUROS CEIP"),
+  // às vezes só raça/categoria (ex: "OFERTA DE TOUROS NELORE PO"). A seção
+  // "Lotes" (lote a lote) existe no HTML mas testamos em várias páginas e
+  // vem sempre vazia — não dá pra contar com ela.
+  const ofertaMatch = html.match(/Oferta\s*<\/h2>\s*<p[^>]*>([^<]+)<\/p>/);
 
   let dataHora = null;
   if (dataMatch) {
@@ -103,6 +109,7 @@ function extrairDetalhe(html) {
     telefone_leiloeira: telefoneMatch ? telefoneMatch[1] : null,
     website_leiloeira: websiteMatch ? websiteMatch[1] : null,
     canal_transmissao: canalMatch ? canalMatch[1] : null,
+    oferta: ofertaMatch ? decodificarEntidades(ofertaMatch[1]).trim() : null,
   };
 }
 
@@ -132,6 +139,7 @@ async function run() {
         telefone_leiloeira: detalhe.telefone_leiloeira,
         website_leiloeira: detalhe.website_leiloeira,
         canal_transmissao: detalhe.canal_transmissao,
+        oferta: detalhe.oferta,
         status: card.status,
         url,
         fonte: "ArrobaPlay",
