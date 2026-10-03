@@ -22,3 +22,8 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: bun run ingest-leiloes.mjs
+      - name: Checar alertas de leilão (leilão novo na agenda)
+        run: |
+          curl -sf -X POST \
+            -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" \
+            https://www.safralume.com.br/api/cron/leiloes-alertas
