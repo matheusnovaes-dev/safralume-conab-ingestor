@@ -1,0 +1,19 @@
+name: Reativar trial vencido (nunca conversou)
+
+on:
+  schedule:
+    # Todo dia às 14:00 UTC (11:00 BRT) — depois do lembrete de retomada
+    # (13:30 UTC), pra não competir pela mesma janela de horário de mensagem.
+    - cron: "0 14 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  reativar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Chamar o endpoint de reativação do painel
+        run: |
+          curl -sf -X POST \
+            -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" \
+            https://www.safralume.com.br/api/cron/reativacao
