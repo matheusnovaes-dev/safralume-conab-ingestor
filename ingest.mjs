@@ -90,10 +90,17 @@ async function bootstrap(page) {
 
   const pesquisarBtn = page.locator('button:has-text("Pesquisar")');
   await pesquisarBtn.click();
-  await page.waitForTimeout(1500);
 
+  // Achado real 2026-10-06: espera fixa de 1,5s falhou 3x seguidas num dia
+  // em que o backend da Conab respondeu mais devagar (screenshot da falha
+  // mostrava a página ainda com spinner de carregamento nesse momento) —
+  // mesmo padrão de outras fontes externas instáveis (ver clima.ts: timeout
+  // generoso em vez de tentativa curta). `waitFor` espera o elemento
+  // aparecer de verdade, até 20s, em vez de adivinhar um tempo fixo.
   const produtoField = page.locator('.br-select:has-text("Produto")').first();
-  if ((await produtoField.count()) === 0) {
+  try {
+    await produtoField.waitFor({ state: "visible", timeout: 20000 });
+  } catch {
     await page.screenshot({ path: "failure.png", fullPage: true });
     throw new Error("Campo 'Produto' não apareceu após Pesquisar.");
   }
