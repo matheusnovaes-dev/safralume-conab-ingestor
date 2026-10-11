@@ -2,9 +2,12 @@ name: Ingest WASDE (USDA)
 
 on:
   schedule:
-    # Dia 13 de cada mês, 14:00 UTC — o WASDE sai por volta do dia 10-12,
+    # Dia 13 de cada mês, ~14:09 UTC — o WASDE sai por volta do dia 10-12,
     # esse horário dá margem pro espelho da Cornell publicar o arquivo.
-    - cron: "0 14 13 * *"
+    # Minuto 9 (não 0) de propósito — mesmo achado de 2026-10-10 em
+    # reativacao.yml: hora cheia exata faz o GitHub Actions atrasar o run
+    # de verdade por horas.
+    - cron: "9 14 13 * *"
   workflow_dispatch: {}
 
 jobs:

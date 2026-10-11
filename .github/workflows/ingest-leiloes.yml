@@ -2,10 +2,12 @@ name: Ingest agenda de leilões
 
 on:
   schedule:
-    # Todo dia, 11:00 UTC — a agenda muda com frequência (novos leilões
+    # Todo dia, ~11:09 UTC — a agenda muda com frequência (novos leilões
     # entram, outros viram "ao vivo" ou saem da lista), payload pequeno
-    # (~35 páginas por rodada).
-    - cron: "0 11 * * *"
+    # (~35 páginas por rodada). Minuto 9 (não 0) de propósito — mesmo
+    # achado de 2026-10-10 em reativacao.yml: hora cheia exata faz o
+    # GitHub Actions atrasar o run de verdade por horas.
+    - cron: "9 11 * * *"
   workflow_dispatch: {}
 
 jobs:

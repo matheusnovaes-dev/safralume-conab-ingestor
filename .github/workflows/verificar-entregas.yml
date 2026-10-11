@@ -2,10 +2,12 @@ name: Verificar entregas de WhatsApp (reabrir falhas reais)
 
 on:
   schedule:
-    # Todo dia às 13:00 UTC (10:00 BRT) — antes do lembrete de retomada
-    # (13:30 UTC) e da reativação (14:00 UTC), pra quem teve falha real de
-    # entrega já entrar reaberto no mesmo dia.
-    - cron: "0 13 * * *"
+    # Todo dia ~13:05 UTC (~10:05 BRT) — antes do lembrete de retomada
+    # (13:30 UTC) e da reativação (14:17 UTC), pra quem teve falha real de
+    # entrega já entrar reaberto no mesmo dia. Minuto 5 (não 0) de
+    # propósito — mesmo achado de 2026-10-10 em reativacao.yml: hora cheia
+    # exata faz o GitHub Actions atrasar o run de verdade por horas.
+    - cron: "5 13 * * *"
   workflow_dispatch: {}
 
 jobs:

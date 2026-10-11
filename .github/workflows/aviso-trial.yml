@@ -2,9 +2,11 @@ name: Avisar trial expirando
 
 on:
   schedule:
-    # Todo dia às 12:00 UTC (09:00 BRT) — depois que o webhook do dia
-    # anterior teve tempo de assentar, ainda de manhã.
-    - cron: "0 12 * * *"
+    # Todo dia ~12:09 UTC (~09:09 BRT) — depois que o webhook do dia
+    # anterior teve tempo de assentar, ainda de manhã. Minuto 9 (não 0) de
+    # propósito — mesmo achado de 2026-10-10 em reativacao.yml: hora cheia
+    # exata faz o GitHub Actions atrasar o run de verdade por horas.
+    - cron: "9 12 * * *"
   workflow_dispatch: {}
 
 jobs:

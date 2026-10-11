@@ -2,11 +2,13 @@ name: Ingest janela de plantio (ZARC/MAPA)
 
 on:
   schedule:
-    # Semanal (segunda, 08:00 UTC) — a Tábua de Risco é publicada por
+    # Semanal (segunda, ~08:09 UTC) — a Tábua de Risco é publicada por
     # safra/Portaria, não diariamente; atualização semanal já cobre
     # qualquer Portaria nova sem reprocessar o arquivo (211MB, ~470 mil
-    # linhas relevantes) com mais frequência do que precisa.
-    - cron: "0 8 * * 1"
+    # linhas relevantes) com mais frequência do que precisa. Minuto 9 (não
+    # 0) de propósito — mesmo achado de 2026-10-10 em reativacao.yml: hora
+    # cheia exata faz o GitHub Actions atrasar o run de verdade por horas.
+    - cron: "9 8 * * 1"
   workflow_dispatch: {}
 
 jobs:

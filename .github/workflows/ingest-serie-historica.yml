@@ -2,10 +2,13 @@ name: Ingest Série Histórica de Safra (Conab)
 
 on:
   schedule:
-    # Dia 15 de cada mês, 14:00 UTC — a Conab atualiza a estimativa de safra
-    # em levantamentos mensais (por volta do dia 8-12), esse horário dá
-    # margem. Não precisa de cadência diária: é dado de safra, não de preço.
-    - cron: "0 14 15 * *"
+    # Dia 15 de cada mês, ~14:09 UTC — a Conab atualiza a estimativa de
+    # safra em levantamentos mensais (por volta do dia 8-12), esse horário
+    # dá margem. Não precisa de cadência diária: é dado de safra, não de
+    # preço. Minuto 9 (não 0) de propósito — mesmo achado de 2026-10-10 em
+    # reativacao.yml: hora cheia exata faz o GitHub Actions atrasar o run
+    # de verdade por horas.
+    - cron: "9 14 15 * *"
   workflow_dispatch: {}
 
 jobs:

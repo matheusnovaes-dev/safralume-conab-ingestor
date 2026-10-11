@@ -2,11 +2,14 @@ name: Ingest ocorrências de ferrugem asiática
 
 on:
   schedule:
-    # Segunda e quinta, 13:00 UTC — mais frequente que os ingests de preço
+    # Segunda e quinta, ~13:09 UTC — mais frequente que os ingests de preço
     # de propósito: é alerta de doença (quanto antes o produtor souber de
     # foco confirmado perto dele, melhor), e o payload é pequeno (~5.500
     # linhas no total), então rodar 2x/semana é barato pro servidor deles.
-    - cron: "0 13 * * 1,4"
+    # Minuto 9 (não 0) de propósito — mesmo achado de 2026-10-10 em
+    # reativacao.yml: hora cheia exata faz o GitHub Actions atrasar o run
+    # de verdade por horas.
+    - cron: "9 13 * * 1,4"
   workflow_dispatch: {}
 
 jobs:

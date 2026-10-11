@@ -2,10 +2,13 @@ name: Ingest Progresso de Safra (Conab)
 
 on:
   schedule:
-    # Toda segunda-feira, 13:00 UTC — a Conab publica o arquivo da semana
+    # Toda segunda-feira, ~13:09 UTC — a Conab publica o arquivo da semana
     # (segunda a domingo anterior) logo no início da semana seguinte
     # (achado real: semana 21-27/09 apareceu já em 28/09, uma segunda).
-    - cron: "0 13 * * 1"
+    # Minuto 9 (não 0) de propósito — mesmo achado de 2026-10-10 em
+    # reativacao.yml: hora cheia exata faz o GitHub Actions atrasar o run
+    # de verdade por horas.
+    - cron: "9 13 * * 1"
   workflow_dispatch: {}
 
 jobs:

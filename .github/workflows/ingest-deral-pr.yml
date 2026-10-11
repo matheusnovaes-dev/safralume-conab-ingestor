@@ -2,9 +2,11 @@ name: Ingest DERAL/SEAB-PR weekly prices
 
 on:
   schedule:
-    # Sexta às 19h America/Sao_Paulo (UTC-3) = 22h UTC — depois do boletim
-    # semanal do DERAL (publicado ao longo da sexta-feira).
-    - cron: "0 22 * * 5"
+    # Sexta ~19h09 America/Sao_Paulo (UTC-3) = ~22h09 UTC — depois do boletim
+    # semanal do DERAL (publicado ao longo da sexta-feira). Minuto 9 (não 0)
+    # de propósito — mesmo achado de 2026-10-10 em reativacao.yml: hora
+    # cheia exata faz o GitHub Actions atrasar o run de verdade por horas.
+    - cron: "9 22 * * 5"
   workflow_dispatch: {}
 
 jobs:
