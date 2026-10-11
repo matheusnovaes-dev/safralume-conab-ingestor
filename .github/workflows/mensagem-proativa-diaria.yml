@@ -1,0 +1,21 @@
+name: Mensagem proativa diária (preço moveu / clima severo)
+
+on:
+  schedule:
+    # Todo dia ~11:09 UTC (~08:09 BRT) — de manhã, pedido do Matheus 2026-10-11.
+    # Minuto 9 (não 0) de propósito — mesmo achado de 2026-10-10 em
+    # reativacao.yml: hora cheia exata faz o GitHub Actions atrasar o run
+    # de verdade por horas.
+    - cron: "9 11 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  enviar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Chamar o endpoint de mensagem proativa do painel
+        run: |
+          curl -sf -X POST \
+            -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" \
+            https://www.safralume.com.br/api/cron/mensagem-proativa
