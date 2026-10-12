@@ -1,0 +1,25 @@
+name: Checar alertas de câmbio
+
+on:
+  schedule:
+    # De 2 em 2 horas, mesmo padrão de check-alertas-preco.yml (câmbio é
+    # alerta de limite único, como preço) — o n8n manda a mensagem a cada
+    # hora (disparado_em setado). Minuto 25 (não 0) de propósito, mesmo
+    # achado de 2026-10-10 em reativacao.yml.
+    - cron: "25 */2 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - name: Install dependencies
+        run: bun install
+      - name: Run check
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: bun run check-alertas-cambio.mjs
