@@ -1,0 +1,21 @@
+name: Resumo diário (bom dia resumido)
+
+on:
+  schedule:
+    # De hora em hora — cada produtor escolhe o próprio horário
+    # (resumo_diario_hora), o cron só processa quem bateu com a hora atual.
+    # Minuto 11 (não 0) de propósito, mesmo achado de 2026-10-10 em
+    # reativacao.yml.
+    - cron: "11 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  enviar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Chamar o endpoint de resumo diário do painel
+        run: |
+          curl -sf -X POST \
+            -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" \
+            https://www.safralume.com.br/api/cron/resumo-diario
