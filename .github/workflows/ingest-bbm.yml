@@ -2,9 +2,14 @@ name: Ingest BBM daily prices
 
 on:
   schedule:
-    # Todo dia às 20h America/Sao_Paulo (UTC-3) = 23h UTC — a página atualiza
-    # às 17h local em dias úteis, dá folga de sobra.
-    - cron: "30 23 * * *"
+    # 3x/dia (9h, 17h, 23h America/Sao_Paulo = 12h, 20h, 02h UTC) — pedido
+    # do Matheus 2026-10-12. Confirmado ao vivo nessa data que a página
+    # publica num horário fixo (17:00 local, não uma janela vaga), então
+    # a passada das 17h já pega quase sempre; as outras duas são rede de
+    # segurança pra uma publicação atrasada ou um reprocessamento.
+    - cron: "30 12 * * *"
+    - cron: "30 20 * * *"
+    - cron: "30 2 * * *"
   workflow_dispatch: {}
 
 jobs:

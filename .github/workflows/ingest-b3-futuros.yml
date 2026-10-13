@@ -2,10 +2,16 @@ name: Ingest futuros agropecuários (B3)
 
 on:
   schedule:
-    # Dias úteis, 23:47 UTC (20:47 BRT) — depois da publicação do Boletim
-    # Diário do Mercado, que a própria B3 mostrou atualizar por volta das
-    # 20:36 BRT.
-    - cron: "47 23 * * 1-5"
+    # 3x/dia útil (9h, 17h, 23h America/Sao_Paulo = 12h, 20h, 02h UTC) —
+    # pedido do Matheus 2026-10-12, mesmo padrão aplicado nas 6 fontes
+    # diárias de preço/câmbio. Continua só em dia útil: fim de semana a B3
+    # não publica boletim novo. Atenção no dia-da-semana do GitHub Actions
+    # (sempre UTC): a passada das 23h BRT cai depois da meia-noite, já no
+    # dia seguinte em UTC — por isso "2-6" (não "1-5") nela, senão ela
+    # rodaria domingo de noite e pularia sexta de noite.
+    - cron: "47 12 * * 1-5"
+    - cron: "47 20 * * 1-5"
+    - cron: "47 2 * * 2-6"
   workflow_dispatch: {}
 
 jobs:

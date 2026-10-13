@@ -2,9 +2,12 @@ name: Ingest câmbio (BCB PTAX)
 
 on:
   schedule:
-    # 13:30 America/Sao_Paulo (UTC-3) = 16:30 UTC — a PTAX do dia publica
-    # por volta das 13h, esse horário dá margem.
-    - cron: "30 16 * * *"
+    # 3x/dia (9h, 17h, 23h America/Sao_Paulo = 12h, 20h, 02h UTC) — pedido
+    # do Matheus 2026-10-12, mesmo padrão aplicado nas 6 fontes diárias de
+    # preço/câmbio pra não deixar passar uma publicação atrasada.
+    - cron: "30 12 * * *"
+    - cron: "30 20 * * *"
+    - cron: "30 2 * * *"
   workflow_dispatch: {}
 
 jobs:

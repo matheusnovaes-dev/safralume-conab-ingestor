@@ -2,9 +2,15 @@ name: Ingest IEA-SP daily prices
 
 on:
   schedule:
-    # Todo dia às 20h America/Sao_Paulo (UTC-3) = 23h UTC — dá folga pro
-    # boletim do dia (quando sair) já estar publicado.
-    - cron: "0 23 * * *"
+    # 3x/dia (9h, 17h, 23h America/Sao_Paulo = 12h, 20h, 02h UTC) — pedido
+    # do Matheus 2026-10-12, mesmo padrão aplicado nas 6 fontes diárias de
+    # preço/câmbio pra não deixar passar uma publicação atrasada. Minuto 15
+    # (não 0) de propósito — mesmo achado de 2026-10-10 em reativacao.yml:
+    # hora cheia exata faz o GitHub Actions atrasar o run de verdade por
+    # horas.
+    - cron: "15 12 * * *"
+    - cron: "15 20 * * *"
+    - cron: "15 2 * * *"
   workflow_dispatch: {}
 
 jobs:

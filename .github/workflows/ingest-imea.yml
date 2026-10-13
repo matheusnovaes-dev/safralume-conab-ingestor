@@ -2,11 +2,14 @@ name: Ingest IMEA weekly bulletins
 
 on:
   schedule:
-    # Diário às 18:30 America/Sao_Paulo (UTC-3) = 21:30 UTC — depois do
-    # horário de publicação do boletim (17h). O boletim só sai em dias
-    # específicos do mês (3, 10, 17, 24, 31); nos outros dias o script
-    # detecta que já temos a edição mais recente e não faz nada.
-    - cron: "30 21 * * *"
+    # 3x/dia (9h, 17h, 23h America/Sao_Paulo = 12h, 20h, 02h UTC) — pedido
+    # do Matheus 2026-10-12, mesmo padrão aplicado nas 6 fontes diárias de
+    # preço/câmbio. O boletim só sai em dias específicos do mês (3, 10,
+    # 17, 24, 31); nos outros dias e nas outras passadas do mesmo dia o
+    # script detecta que já temos a edição mais recente e não faz nada.
+    - cron: "30 12 * * *"
+    - cron: "30 20 * * *"
+    - cron: "30 2 * * *"
   workflow_dispatch: {}
 
 jobs:
