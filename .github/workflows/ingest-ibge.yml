@@ -19,4 +19,7 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          # O servidor do IBGE envia só o certificado do site, sem o intermediário da Sectigo: o Bun não
+          # busca o que falta sozinho e falhava com UNABLE_TO_VERIFY_LEAF_SIGNATURE (15/10/2026).
+          NODE_EXTRA_CA_CERTS: ${{ github.workspace }}/certs-ibge-intermediario.pem
         run: bun run ingest-ibge.mjs
