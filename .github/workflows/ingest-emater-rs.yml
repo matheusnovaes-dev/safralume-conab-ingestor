@@ -1,4 +1,4 @@
-name: Ingest Emater/RS weekly prices
+name: Ingest Emater/RS weekly prices (SÓ MANUAL: roda na VM Oracle, ver comentário)
 
 on:
   # Sem schedule aqui de propósito: emater.tche.br bloqueia IP de datacenter
