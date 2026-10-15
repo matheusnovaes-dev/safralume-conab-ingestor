@@ -24,6 +24,23 @@ const URL_COTACOES = "https://www.bbmbolsa.com.br/cotacoes-agricolas/";
 const PRODUTOS = {
   7: { produto: "MILHO EM GRÃOS (60 kg)", unidade: "60 kg" },
   8: { produto: "SOJA EM GRÃOS (60 kg)", unidade: "60 kg" },
+  // 2026-10-15: a mesma página traz café, feijão, trigo e arroz, todos "preço pago ao produtor rural,
+  // à vista, mercado físico", com a unidade escrita no subtítulo de cada painel (conferida):
+  // 3 = café arábica, tipo 6 bebida dura, R$/saca de 60 kg (praças de MG: Varginha, Guaxupé,
+  // Patrocínio, Manhuaçu; SP: E.S. do Pinhal; BA: Oeste da Bahia). Era a lacuna do café de MG.
+  3: { produto: "CAFÉ ARÁBICA TIPO 6, BEBIDA DURA (60 kg)", unidade: "60 kg" },
+  // 5 = café conillon tipo 8, R$/saca de 60 kg (ES: São Gabriel da Palha). Era a lacuna do conillon do ES.
+  5: { produto: "CAFÉ CONILLON TIPO 8 (60 kg)", unidade: "60 kg" },
+  // 4 = feijão carioca extra, R$/60 kg (MG: Paracatu/Unaí; BA; PR: Castro). O feijão preto (painel 6) é
+  // só preço de exportação em Paranaguá e fica de fora.
+  4: { produto: "FEIJÃO CARIOCA EXTRA (60 kg)", unidade: "60 kg" },
+  // 9 = trigo, R$/tonelada (PR: Cascavel, Maringá, Ponta Grossa; RS: Cruz Alta, Giruá...).
+  // A BBM cota em R$/tonelada; o resto do banco (DERAL, Emater) usa a saca de 60 kg, e misturar as duas
+  // unidades quebrava a comparação entre estados (média de R$79 com R$1.300). Converte para saca: x 0,06.
+  9: { produto: "TRIGO (BBM) (60 kg)", unidade: "60 kg", fator: 0.06 },
+  // 2 = arroz em casca longo fino tipo 1, R$/50 kg (RS e SC). O painel 13 (arroz Sudeste, CIF indústria)
+  // e o 1 (algodão, uma praça só em SP) ficam de fora.
+  2: { produto: "ARROZ EM CASCA LONGO FINO TIPO 1 (50 kg)", unidade: "50 kg" },
 };
 
 const UF_POR_ESTADO = {
@@ -91,7 +108,7 @@ async function run() {
           uf,
           regiao: pracaBruta.trim().replace(/\s+/g, " "),
           nivel_comercializacao: "PRODUTOR",
-          preco,
+          preco: mapeado.fator ? Math.round(preco * mapeado.fator * 100) / 100 : preco,
           unidade: mapeado.unidade,
           data_referencia: dataReferencia,
           fonte: FONTE,
