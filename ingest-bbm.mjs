@@ -56,6 +56,9 @@ const UF_POR_ESTADO = {
   "São Paulo": "SP",
 };
 
+// A BBM lista "E.S. do Pinhal" (Espírito Santo do Pinhal) no bloco de Minas Gerais, mas o município é de SP.
+const UF_DA_PRACA = { "E.S. do Pinhal": "SP" };
+
 function numeroOuNull(s) {
   const limpo = s.replace(/^R\$\s*/, "").replace(/\./g, "").replace(",", ".").trim();
   const n = Number(limpo);
@@ -105,7 +108,7 @@ async function run() {
         if (preco == null || preco <= 0) continue;
         rows.push({
           produto: mapeado.produto,
-          uf,
+          uf: UF_DA_PRACA[pracaBruta.trim().replace(/\s+/g, " ")] ?? uf,
           regiao: pracaBruta.trim().replace(/\s+/g, " "),
           nivel_comercializacao: "PRODUTOR",
           preco: mapeado.fator ? Math.round(preco * mapeado.fator * 100) / 100 : preco,
