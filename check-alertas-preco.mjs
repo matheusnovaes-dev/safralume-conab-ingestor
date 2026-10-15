@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { pathToFileURL } from "node:url";
 import { buscarPrecoAtual } from "./preco-fonte.mjs";
+import { produtoresComAcesso, soComAcesso } from "./acesso-conta.mjs";
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -28,9 +29,9 @@ const supabase = DRY_RUN ? null : createClient(SUPABASE_URL, SUPABASE_SERVICE_RO
 // alerta de MT/GO decidia em cima de um preço de semanas atrás e alerta de
 // produto só-regional nunca disparava.
 export async function checarAlertas(supabase, { simulate = false } = {}) {
-  const { data: alertas, error } = await supabase
+  let { data: alertas, error } = await supabase
     .from("alertas_preco")
-    .select("id, cultura, uf, limite, direcao")
+    .select("id, produtor_id, cultura, uf, limite, direcao")
     .eq("ativo", true)
     .is("disparado_em", null);
 
@@ -42,6 +43,7 @@ export async function checarAlertas(supabase, { simulate = false } = {}) {
     console.log("Nenhum alerta ativo pra checar.");
     return { erro: false, disparados: [] };
   }
+  alertas = soComAcesso(alertas, await produtoresComAcesso(supabase), "alertas de preço");
 
   console.log(`Checando ${alertas.length} alerta(s) ativo(s)...`);
   const disparados = [];

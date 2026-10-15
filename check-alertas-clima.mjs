@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { produtoresComAcesso, soComAcesso } from "./acesso-conta.mjs";
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -62,11 +63,11 @@ function condicaoDisparou(condicao, limite, previsao) {
 }
 
 async function run() {
-  const { data: alertas, error } = DRY_RUN
+  let { data: alertas, error } = DRY_RUN
     ? { data: [], error: null }
     : await supabase
         .from("alertas_clima")
-        .select("id, uf, condicao, limite, ultimo_disparo_data")
+        .select("id, produtor_id, uf, condicao, limite, ultimo_disparo_data")
         .eq("ativo", true);
 
   if (error) {
@@ -75,6 +76,11 @@ async function run() {
   }
   if (!alertas || alertas.length === 0) {
     console.log(DRY_RUN ? "Dry-run: nada a checar." : "Nenhum alerta de clima ativo.");
+    return;
+  }
+  alertas = soComAcesso(alertas, await produtoresComAcesso(supabase), "alertas de clima");
+  if (alertas.length === 0) {
+    console.log("Nenhum alerta de clima de conta com acesso.");
     return;
   }
 

@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { pathToFileURL } from "node:url";
+import { produtoresComAcesso, soComAcesso } from "./acesso-conta.mjs";
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -16,9 +17,9 @@ const supabase = DRY_RUN ? null : createClient(SUPABASE_URL, SUPABASE_SERVICE_RO
 // `cambio`. Pedido do Matheus 2026-10-12, 4º tipo de alerta (preço/câmbio/
 // clima/leilão).
 export async function checarAlertasCambio(supabase, { simulate = false } = {}) {
-  const { data: alertas, error } = await supabase
+  let { data: alertas, error } = await supabase
     .from("alertas_cambio")
-    .select("id, limite, direcao")
+    .select("id, produtor_id, limite, direcao")
     .eq("ativo", true)
     .is("disparado_em", null);
 
@@ -30,6 +31,7 @@ export async function checarAlertasCambio(supabase, { simulate = false } = {}) {
     console.log("Nenhum alerta de câmbio ativo pra checar.");
     return { erro: false, disparados: [] };
   }
+  alertas = soComAcesso(alertas, await produtoresComAcesso(supabase), "alertas de câmbio");
 
   const { data: cambioAtual, error: erroCambio } = await supabase
     .from("cambio")

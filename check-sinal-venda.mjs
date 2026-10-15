@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { escolherFonte, padraoDeProduto, ultimaDataRegional, normalizarCultura } from "./preco-fonte.mjs";
+import { produtoresComAcesso, soComAcesso } from "./acesso-conta.mjs";
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -130,7 +131,7 @@ async function run() {
     .toISOString()
     .slice(0, 10);
 
-  const { data: produtores, error } = DRY_RUN
+  let { data: produtores, error } = DRY_RUN
     ? { data: [], error: null }
     : await supabase
         .from("produtores")
@@ -146,6 +147,11 @@ async function run() {
   }
   if (!produtores || produtores.length === 0) {
     console.log(DRY_RUN ? "Dry-run: nada a checar." : "Nenhum produtor com cultura/UF definidos.");
+    return;
+  }
+  produtores = soComAcesso(produtores, await produtoresComAcesso(supabase), "sinal de venda");
+  if (produtores.length === 0) {
+    console.log("Nenhum produtor com acesso pra receber sinal de venda.");
     return;
   }
 
