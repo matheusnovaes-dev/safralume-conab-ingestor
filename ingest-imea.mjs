@@ -270,6 +270,51 @@ async function jaTemos(cadeia, dataPublicacao) {
   return data.manchete != null;
 }
 
+// Preço de verdade do MT que o boletim traz e a Conab não publica por UF (achado 2026-10-15: boi gordo
+// e algodão de MT, os maiores produtores, caíam em "ainda não temos preço"). Espelha na tabela
+// `precos` (a que o bot, o painel e o cadastro leem) só as séries que são preço ao produtor, com o
+// nome da fonte dizendo o que é. O boi do Imea é "a prazo", por isso vai escrito na fonte.
+const ESPELHOS_EM_PRECOS = [
+  {
+    cadeia: "boi",
+    indicador: "Boi gordo a prazo",
+    local: "MT",
+    produto: "BOI GORDO (15 kg)",
+    unidade: "15 kg",
+    fonte: "Imea (boi gordo a prazo)",
+  },
+  {
+    cadeia: "algodao",
+    indicador: "Preço Imea Pluma-MT",
+    local: "MT",
+    produto: "ALGODÃO EM PLUMA (IMEA-MT) (15 kg)",
+    unidade: "15 kg",
+    fonte: "Imea",
+  },
+];
+
+export function indicadoresParaPrecos(indicadores, hojeIso = new Date().toISOString().slice(0, 10)) {
+  const linhas = [];
+  for (const e of ESPELHOS_EM_PRECOS) {
+    for (const i of indicadores) {
+      if (i.cadeia !== e.cadeia || i.indicador !== e.indicador || i.local !== e.local) continue;
+      if (i.periodicidade !== "diario" || !Number.isFinite(i.valor)) continue;
+      if (i.data_referencia > hojeIso) continue; // série futura (contratos) não é preço de hoje
+      linhas.push({
+        produto: e.produto,
+        uf: "MT",
+        regiao: "",
+        nivel_comercializacao: "PRODUTOR",
+        preco: i.valor,
+        unidade: e.unidade,
+        data_referencia: i.data_referencia,
+        fonte: e.fonte,
+      });
+    }
+  }
+  return linhas;
+}
+
 async function coletarCadeia(cadeia, cadeiaId) {
   console.log(`\n=== ${cadeia} (cadeia=${cadeiaId}) ===`);
   const url = `https://api1.imea.com.br/api/arquivo?cadeia=${cadeiaId}&tipo=${TIPO_BOLETIM_SEMANAL}&page=1&pageSize=1&nome=&sort=1`;
@@ -333,6 +378,15 @@ async function coletarCadeia(cadeia, cadeiaId) {
   if (errIndicadores) {
     console.error("  Erro ao gravar indicadores:", errIndicadores);
     return;
+  }
+
+  const paraPrecos = indicadoresParaPrecos(indicadores);
+  if (paraPrecos.length > 0) {
+    const { error: errPrecos } = await supabase
+      .from("precos")
+      .upsert(paraPrecos, { onConflict: "produto,uf,regiao,data_referencia" });
+    if (errPrecos) console.error("  Erro ao espelhar preço do Imea em precos:", errPrecos);
+    else console.log(`  ${paraPrecos.length} preços do Imea espelhados em precos.`);
   }
 
   const { error: errBoletim } = await supabase.from("imea_boletins").upsert(
