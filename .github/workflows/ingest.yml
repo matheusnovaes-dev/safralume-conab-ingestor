@@ -10,9 +10,12 @@ on:
     # propósito — o GitHub Actions atrasa/derruba agendamentos concentrados
     # na hora cheia (":00"), problema conhecido da plataforma; achado
     # investigando um dia inteiro sem rodar (27-28/08/2026).
-    - cron: "12 12 * * *"
-    - cron: "12 20 * * *"
-    - cron: "12 2 * * *"
+    # 2026-10-16: o horário das 23h BRT (02:12 UTC) era adiado pelo GitHub em 4 a 5 h e caía de madrugada,
+    # quando o site da Conab recusa conexão (ERR_CONNECTION_REFUSED todo dia ~04h BRT). Agora 8h, 13h e 18h BRT
+    # (11:12, 16:12 e 21:12 UTC): mesmo com atraso de horas a execução cai com o site no ar.
+    - cron: "12 11 * * *"
+    - cron: "12 16 * * *"
+    - cron: "12 21 * * *"
   workflow_dispatch:
     inputs:
       dias_historico:
