@@ -28,10 +28,21 @@ const capitalPorUf = {
 const DIAS_CURTO_PRAZO = 3;
 const DIAS_SECA = 7;
 
-async function buscarPrevisao(uf) {
-  const coords = capitalPorUf[uf];
+// Onde olhar a previsão: a cidade do alerta (lat/lon guardados quando o produtor escolheu uma cidade) ou,
+// sem cidade, a capital da UF (alertas antigos e os que valem pro estado todo). A chave agrupa alertas
+// do mesmo lugar numa chamada só.
+function localDoAlerta(alerta) {
+  if (alerta.lat != null && alerta.lon != null) {
+    const lat = Number(alerta.lat);
+    const lon = Number(alerta.lon);
+    return { chave: `${lat.toFixed(2)},${lon.toFixed(2)}`, lat, lon, nome: alerta.cidade ?? alerta.uf };
+  }
+  const coords = capitalPorUf[alerta.uf];
   if (!coords) return null;
-  const [lat, lon] = coords;
+  return { chave: `uf:${alerta.uf}`, lat: coords[0], lon: coords[1], nome: alerta.uf };
+}
+
+async function buscarPrevisao({ lat, lon }) {
   const url =
     `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
     `&daily=precipitation_probability_max,temperature_2m_min,wind_speed_10m_max` +
@@ -67,7 +78,8 @@ async function run() {
     ? { data: [], error: null }
     : await supabase
         .from("alertas_clima")
-        .select("id, produtor_id, uf, condicao, limite, ultimo_disparo_data")
+        // "*" de propósito: funciona antes e depois das colunas cidade/lat/lon existirem no banco
+        .select("*")
         .eq("ativo", true);
 
   if (error) {
@@ -85,23 +97,27 @@ async function run() {
   }
 
   const hoje = new Date().toISOString().slice(0, 10);
-  const previsaoPorUf = new Map();
-  for (const uf of new Set(alertas.map((a) => a.uf))) {
-    previsaoPorUf.set(uf, await buscarPrevisao(uf));
+  const previsaoPorLocal = new Map();
+  for (const alerta of alertas) {
+    const local = localDoAlerta(alerta);
+    if (local && !previsaoPorLocal.has(local.chave)) {
+      previsaoPorLocal.set(local.chave, await buscarPrevisao(local));
+    }
   }
 
   console.log(`Checando ${alertas.length} alerta(s) de clima ativo(s)...`);
   let disparados = 0;
   for (const alerta of alertas) {
     if (alerta.ultimo_disparo_data === hoje) continue; // já avisou hoje, não repete
-    const previsao = previsaoPorUf.get(alerta.uf);
+    const local = localDoAlerta(alerta);
+    const previsao = local ? previsaoPorLocal.get(local.chave) : null;
     if (!previsao) {
-      console.log(`  ! Sem previsão pra UF "${alerta.uf}" (alerta ${alerta.id}).`);
+      console.log(`  ! Sem previsão pra "${local?.nome ?? alerta.uf}" (alerta ${alerta.id}).`);
       continue;
     }
     if (condicaoDisparou(alerta.condicao, Number(alerta.limite), previsao)) {
       disparados++;
-      console.log(`  -> Alerta ${alerta.id} disparado: ${alerta.condicao} em ${alerta.uf}`);
+      console.log(`  -> Alerta ${alerta.id} disparado: ${alerta.condicao} em ${local.nome}`);
       const { error: updErr } = await supabase
         .from("alertas_clima")
         .update({ para_enviar: true })
