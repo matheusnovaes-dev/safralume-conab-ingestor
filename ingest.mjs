@@ -173,7 +173,11 @@ async function fetchAllPages(page, url, baseBody, periodo) {
 
 async function main() {
   const browser = await chromium.launch();
-  const page = await browser.newPage();
+  // 2026-10-17: o site da Conab passou a servir um certificado com nome inválido (ERR_CERT_COMMON_NAME_INVALID) e as
+  // execuções falharam. Aceitar o erro de certificado foi autorizado pelo Matheus (dado público, só leitura). Tirar
+  // `ignoreHTTPSErrors` quando a Conab corrigir o certificado.
+  const context = await browser.newContext({ ignoreHTTPSErrors: true });
+  const page = await context.newPage();
 
   try {
     await run(page);
