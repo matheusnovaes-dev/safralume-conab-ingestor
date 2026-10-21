@@ -1,0 +1,19 @@
+name: Aviso de venda por margem (plano Prata)
+
+on:
+  schedule:
+    # Todo dia ~14:17 UTC (~11:17 BRT): depois da cotação da manhã da BBM. Minuto 17 (não 0) de propósito, mesmo achado
+    # de reativacao.yml: hora cheia exata faz o GitHub Actions atrasar o run de verdade por horas.
+    - cron: "17 14 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  enviar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Chamar o endpoint de aviso de margem do painel
+        run: |
+          curl -sf -X POST \
+            -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" \
+            https://www.safralume.com.br/api/cron/aviso-margem
