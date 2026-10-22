@@ -1,6 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 
-import { atrasoInicial, buscarComCuidado, datasJaGravadas, diasSemDado, esperarComVariacao, isoParaBR } from "./coleta-educada.mjs";
+import { UA_PADRAO, atrasoInicial, buscarComCuidado, datasJaGravadas, diasSemDado, esperarComVariacao, isoParaBR } from "./coleta-educada.mjs";
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -10,7 +10,7 @@ if (DRY_RUN) {
 }
 const supabase = DRY_RUN ? null : createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36";
+const UA = UA_PADRAO;
 const UF = "SP";
 const FONTE = "IEA-SP";
 const BASE_URL = "https://infoiea.agricultura.sp.gov.br/BancoDeDados/PrecosDiarios/Recebidos";

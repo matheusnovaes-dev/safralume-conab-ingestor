@@ -1,6 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 
-import { atrasoInicial, buscarComCuidado, esperarComVariacao, jaCaptadoHa } from "./coleta-educada.mjs";
+import { UA_PADRAO, atrasoInicial, buscarComCuidado, esperarComVariacao, jaCaptadoHa } from "./coleta-educada.mjs";
 
 // IEA-SP, série MENSAL de "Preços Médios Recebidos pelos Agricultores" (estado de SP). É outra base que a diária
 // (ingest-iea-sp.mjs): ASP.NET WebForms (nia1/precos_medios.aspx), tem cana de açúcar, leite, suíno, ovos e dezenas de
@@ -14,7 +14,7 @@ const DRY_RUN = !SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY;
 if (DRY_RUN) console.log("SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY ausentes: rodando em modo dry-run.");
 const supabase = DRY_RUN ? null : createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36";
+const UA = UA_PADRAO;
 const URL_PAGINA = "https://infoiea.agricultura.sp.gov.br/nia1/precos_medios.aspx?cod_sis=2";
 const FONTE = "IEA-SP (mensal)";
 const UF = "SP";

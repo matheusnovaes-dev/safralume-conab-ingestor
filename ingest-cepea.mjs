@@ -1,6 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 
-import { atrasoInicial, buscarComCuidado, esperarComVariacao, jaCaptadoHa } from "./coleta-educada.mjs";
+import { UA_PADRAO, atrasoInicial, buscarComCuidado, esperarComVariacao, jaCaptadoHa } from "./coleta-educada.mjs";
 
 // Cepea/Esalq: valores publicados nas páginas de indicador (suíno diário por estado; leite cru mensal por estado). Uso autorizado por
 // escrito pelo Cepea (e-mail ao Matheus, 2026-10-22: "a utilização de informações factuais públicas, como indicadores e valores de
@@ -19,7 +19,7 @@ if (!DRY && (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY)) {
 }
 const supabase = DRY ? null : createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-const UA = "SafralumeBot/1.0 (+https://safralume.com.br; indicadores publicos do Cepea, uso autorizado)";
+const UA = UA_PADRAO;
 const FONTE = "Cepea/Esalq";
 const MESES = { jan: 1, fev: 2, mar: 3, abr: 4, mai: 5, jun: 6, jul: 7, ago: 8, set: 9, out: 10, nov: 11, dez: 12 };
 const ESTADOS_DO_LEITE = new Set(["RS", "SC", "PR", "SP", "MG", "GO", "BA", "RJ", "ES"]);

@@ -1,6 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 
-import { atrasoInicial, buscarComCuidado, datasJaGravadas, diasSemDado, esperarComVariacao, isoParaBR } from "./coleta-educada.mjs";
+import { UA_PADRAO, atrasoInicial, buscarComCuidado, datasJaGravadas, diasSemDado, esperarComVariacao, isoParaBR } from "./coleta-educada.mjs";
 
 // IEA-SP, preços DIÁRIOS no mercado ATACADISTA (Grande São Paulo: CEAGESP e outros): BancoDeDados/PrecosDiarios/Atacado.
 // É referência de atacado, NÃO o preço que o produtor recebe: vai para a tabela própria `precos_atacado` (ver
@@ -15,7 +15,7 @@ if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
 }
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36";
+const UA = UA_PADRAO;
 const URL_PAGINA = "https://infoiea.agricultura.sp.gov.br/BancoDeDados/PrecosDiarios/Atacado";
 const FONTE = "IEA-SP (atacado)";
 const PRACA = "RMSP (atacado)";

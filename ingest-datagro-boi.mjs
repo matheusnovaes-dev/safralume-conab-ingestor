@@ -1,6 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 
-import { atrasoInicial, buscarComCuidado, jaCaptadoHa } from "./coleta-educada.mjs";
+import { UA_PADRAO, atrasoInicial, buscarComCuidado, jaCaptadoHa } from "./coleta-educada.mjs";
 
 // Indicador do Boi DATAGRO por estado (R$/@): o mesmo JSON que a página pública indicadordoboi.com.br consulta para mostrar os
 // valores do dia. Uso autorizado por escrito pela Datagro (e-mail ao Matheus, 2026-10-22: "informações factuais públicas,
@@ -20,7 +20,7 @@ if (!DRY && (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY)) {
 }
 const supabase = DRY ? null : createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-const UA = "SafralumeBot/1.0 (+https://safralume.com.br; coleta de indicadores publicos autorizada pela Datagro)";
+const UA = UA_PADRAO;
 const HORAS_SEM_REPETIR = 3; // o indicador sai uma vez por dia: duas rodadas seguidas não precisam bater de novo
 const CLIENTE = "a81574eb-06c1-11ed-bcba-02ebefa3b928"; // identificador público que a própria página do indicador envia
 const UFS = ["GO", "MS", "MG", "PA", "RO", "TO", "BA", "MT"];

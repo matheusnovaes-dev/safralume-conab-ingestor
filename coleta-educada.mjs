@@ -5,7 +5,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
  * pedirem. Nada aqui tenta driblar bloqueio: se uma fonte disser "não" (403, 429 repetido, desafio de robô), o script PARA com
  * um erro claro (o job fica vermelho e o GitHub avisa) em vez de insistir, trocar de identidade ou imitar navegador.
  *
- * - identificação própria (SafralumeBot + site), nunca se passa por navegador;
+ * - identificação própria (o nome DataFarm, informado pelo Matheus às fontes), nunca se passa por navegador;
  * - um pedido por vez, com espaço (e variação aleatória) entre eles;
  * - tempo limite e nova tentativa com espera crescente SÓ para falha de rede/5xx; 429 respeita Retry-After;
  * - 401/403/desafio de robô: aborta na hora (BloqueioDetectado), sem repetir;
@@ -13,7 +13,8 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
  * - não coleta de novo o que já coletou há pouco (jaCaptadoHa), e só vai buscar os dias que faltam (diasSemDado).
  */
 
-export const UA_PADRAO = "SafralumeBot/1.0 (+https://safralume.com.br; coleta educada de dados publicos autorizada)";
+// Nome do robô (só o nome, decisão do Matheus em 2026-10-22; ele informa esse nome à Datagro e ao Cepea). Nunca imita navegador.
+export const UA_PADRAO = "DataFarm";
 const MARCAS_DE_BLOQUEIO = /just a moment|cf-chl|captcha|attention required|access denied|enable javascript and cookies/i;
 
 export class BloqueioDetectado extends Error {
