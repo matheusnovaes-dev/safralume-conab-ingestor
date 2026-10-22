@@ -1,5 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 
+import { atrasoInicial, buscarComCuidado, datasJaGravadas, diasSemDado, esperarComVariacao, isoParaBR } from "./coleta-educada.mjs";
+
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const DRY_RUN = !SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY;
@@ -109,9 +111,7 @@ function numeroOuNull(s) {
 }
 
 async function obterSessao() {
-  const res = await fetch(BASE_URL, { headers: { "User-Agent": UA } });
-  if (!res.ok) throw new Error(`Falha ao abrir a página: HTTP ${res.status}`);
-  const html = await res.text();
+  const { texto: html, res } = await buscarComCuidado(BASE_URL, { ua: UA });
   const token = html.match(/__RequestVerificationToken" type="hidden" value="([^"]*)"/)?.[1];
   const cookie = res.headers.get("set-cookie");
   if (!token || !cookie) throw new Error("Não encontrei token/cookie de sessão na página.");
@@ -126,18 +126,17 @@ async function buscarProduto(sessao, codigo, startDate, endDate) {
   params.append("startDate", startDate);
   params.append("endDate", endDate);
 
-  const res = await fetch(BASE_URL, {
-    method: "POST",
+  const { texto } = await buscarComCuidado(BASE_URL, {
+    metodo: "POST",
+    ua: UA,
     headers: {
-      "User-Agent": UA,
       "X-Requested-With": "XMLHttpRequest",
       "Content-Type": "application/x-www-form-urlencoded",
       Cookie: sessao.cookie,
     },
-    body: params.toString(),
+    corpo: params.toString(),
   });
-  if (!res.ok) throw new Error(`HTTP ${res.status} pro produto ${codigo}`);
-  return await res.text();
+  return texto;
 }
 
 // Linhas da tabela: <td>GRUPO</td><td>Produto</td><td>EDR</td><td>Data</td>
@@ -181,31 +180,39 @@ async function run() {
   // de 10 dias da versão antiga, a coleta pegava sempre o dia de 10 dias atrás e, caindo em sábado/domingo/feriado, vinha
   // vazia; a base ficou parada em 09/10 enquanto o IEA já tinha 21/10, e o job aparecia "verde"). Agora consulta cada dia
   // da janela, um a um: primeiro a soja como sonda (dia sem preço é pulado) e, se há dado, todos os produtos.
+  await atrasoInicial();
   const DIAS = Number(process.env.IEA_DIAS ?? 8);
-  const fmt = (d) => d.toLocaleDateString("pt-BR", { timeZone: "UTC" });
-  const hoje = new Date();
+  // Só pede os dias úteis que ainda não estão no banco (dia sem dado no IEA, como feriado, custa 1 pedido de sonda por rodada):
+  // uma rodada normal faz ~50 pedidos em vez de ~400.
+  const jaTem = supabase
+    ? await datasJaGravadas(supabase, { fonte: FONTE, filtroProduto: "SOJA EM GRÃOS (60 kg)", dias: DIAS + 2 })
+    : new Set();
+  const pendentes = process.env.FORCAR === "1" ? diasSemDado(DIAS, new Set()) : diasSemDado(DIAS, jaTem);
   const todasLinhas = [];
   const diasComDado = [];
-  for (let n = 0; n < DIAS; n++) {
-    const d = new Date(hoje);
-    d.setUTCDate(d.getUTCDate() - n);
-    const dia = fmt(d);
+  for (const iso of pendentes) {
+    const dia = isoParaBR(iso);
     const sonda = extrairLinhas(await buscarProduto(sessao, 1126, dia, dia), "SONDA");
+    await esperarComVariacao(300, 200);
     if (sonda.length === 0) continue;
     diasComDado.push(dia);
     for (const [codigo, produtoPadronizado] of Object.entries(PRODUTOS)) {
       const html = await buscarProduto(sessao, codigo, dia, dia);
       todasLinhas.push(...extrairLinhas(html, produtoPadronizado));
-      await new Promise((r) => setTimeout(r, 150));
+      await esperarComVariacao(300, 200);
     }
   }
-  console.log(`Dias com preço nos últimos ${DIAS}: ${diasComDado.join(", ") || "nenhum"}.`);
+  console.log(`Dias pendentes: ${pendentes.length}; com preço: ${diasComDado.join(", ") || "nenhum"}.`);
   console.log(`${todasLinhas.length} linha(s) coletada(s) no total.`);
 
   if (todasLinhas.length === 0) {
-    // Falha de verdade (antes saía com código 0 e o job ficava verde): o vigia de frescor e o e-mail do GitHub avisam.
-    console.error(`Nenhuma linha extraída em ${DIAS} dias. Abortando sem gravar.`);
-    process.exit(1);
+    // Nada novo é normal (já estava tudo no banco, ou o IEA ainda não publicou o dia). Só é falha se o banco está vazio de verdade.
+    if (supabase && jaTem.size === 0) {
+      console.error(`Nenhuma linha extraída e o banco não tem nenhum dia dos últimos ${DIAS}. Abortando.`);
+      process.exit(1);
+    }
+    console.log("Nada novo para gravar.");
+    return;
   }
 
   const byKey = new Map();

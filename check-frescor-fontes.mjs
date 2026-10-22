@@ -21,6 +21,9 @@ const FONTES = [
   { fonte: "IEA-SP", maxDiasRef: 6, maxHorasGravacao: 72 },
   // Série mensal do IEA: a fonte publica com ~4 meses de atraso (jun/2026 em out/2026) e a data gravada é o dia 1 do mês.
   { fonte: "IEA-SP (mensal)", maxDiasRef: 175, maxHorasGravacao: 240 },
+  // Datagro (boi por estado) e Cepea (suíno diário + leite mensal): autorizados por escrito em 2026-10-22; só publicam em dia útil.
+  { fonte: "Datagro", maxDiasRef: 6, maxHorasGravacao: 72 },
+  { fonte: "Cepea/Esalq", maxDiasRef: 6, maxHorasGravacao: 72 },
   // Atacado diário do IEA (tabela própria, fora de `precos`): dia útil sem dado é normal, mais de 6 dias não.
   { fonte: "IEA-SP (atacado)", tabela: "precos_atacado", maxDiasRef: 6, maxHorasGravacao: 72 },
   { fonte: "DERAL/SEAB-PR", maxDiasRef: 14 },

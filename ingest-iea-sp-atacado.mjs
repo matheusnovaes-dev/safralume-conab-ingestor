@@ -1,5 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 
+import { atrasoInicial, buscarComCuidado, datasJaGravadas, diasSemDado, esperarComVariacao, isoParaBR } from "./coleta-educada.mjs";
+
 // IEA-SP, preços DIÁRIOS no mercado ATACADISTA (Grande São Paulo: CEAGESP e outros): BancoDeDados/PrecosDiarios/Atacado.
 // É referência de atacado, NÃO o preço que o produtor recebe: vai para a tabela própria `precos_atacado` (ver
 // rural-heart-project/supabase/precos-atacado.sql) e o bot cita como "referência de atacado". Mesmo comportamento da série
@@ -63,9 +65,7 @@ export function extrairLinhas(html) {
 }
 
 async function abrirPagina() {
-  const res = await fetch(URL_PAGINA, { headers: { "User-Agent": UA } });
-  if (!res.ok) throw new Error(`IEA atacado: HTTP ${res.status} ao abrir a página`);
-  const html = await res.text();
+  const { texto: html, res } = await buscarComCuidado(URL_PAGINA, { ua: UA });
   const token = html.match(/__RequestVerificationToken" type="hidden" value="([^"]*)"/)?.[1];
   const cookie = (res.headers.get("set-cookie") ?? "").split(";")[0];
   if (!token) throw new Error("IEA atacado: token de sessão não encontrado (layout mudou?)");
@@ -78,40 +78,44 @@ async function consultarDia(sessao, dia) {
   for (const c of PRODUTOS) p.append("prod", String(c));
   p.append("startDate", dia);
   p.append("endDate", dia);
-  const res = await fetch(URL_PAGINA, {
-    method: "POST",
+  const { texto } = await buscarComCuidado(URL_PAGINA, {
+    metodo: "POST",
+    ua: UA,
     headers: {
-      "User-Agent": UA,
       "X-Requested-With": "XMLHttpRequest",
       "Content-Type": "application/x-www-form-urlencoded",
       Cookie: sessao.cookie,
     },
-    body: p.toString(),
+    corpo: p.toString(),
   });
-  if (!res.ok) throw new Error(`IEA atacado: HTTP ${res.status} no dia ${dia}`);
-  return extrairLinhas(await res.text());
+  return extrairLinhas(texto);
 }
 
 async function run() {
+  await atrasoInicial();
+  // Só os dias úteis que ainda não estão em precos_atacado (um pedido por dia, todos os produtos juntos).
+  const jaTem = await datasJaGravadas(supabase, { tabela: "precos_atacado", fonte: FONTE, dias: DIAS + 2 });
+  const pendentes = process.env.FORCAR === "1" ? diasSemDado(DIAS, new Set()) : diasSemDado(DIAS, jaTem);
+  if (pendentes.length === 0) return console.log("IEA atacado: nenhum dia útil pendente.");
   const sessao = await abrirPagina();
-  const fmt = (d) => d.toLocaleDateString("pt-BR", { timeZone: "UTC" });
-  const hoje = new Date();
   const todas = [];
   const dias = [];
-  for (let n = 0; n < DIAS; n++) {
-    const d = new Date(hoje);
-    d.setUTCDate(d.getUTCDate() - n);
-    const dia = fmt(d);
+  for (const iso of pendentes) {
+    const dia = isoParaBR(iso);
     const linhas = await consultarDia(sessao, dia);
-    if (linhas.length === 0) continue; // fim de semana, feriado ou ainda não publicado
+    await esperarComVariacao(400, 300);
+    if (linhas.length === 0) continue; // feriado ou ainda não publicado
     dias.push(dia);
     todas.push(...linhas);
-    await new Promise((r) => setTimeout(r, 200));
   }
-  console.log(`Dias com preço nos últimos ${DIAS}: ${dias.join(", ") || "nenhum"}. ${todas.length} linha(s).`);
+  console.log(`Dias pendentes: ${pendentes.length}; com preço: ${dias.join(", ") || "nenhum"}. ${todas.length} linha(s).`);
   if (todas.length === 0) {
-    console.error("IEA atacado: nenhuma linha extraída; abortando sem gravar.");
-    process.exit(1);
+    // Nada novo é normal (feriado, ainda não publicado). Só é falha se a tabela está vazia nos últimos dias.
+    if (jaTem.size === 0) {
+      console.error("IEA atacado: nenhuma linha extraída e a tabela está sem dados recentes.");
+      process.exit(1);
+    }
+    return console.log("Nada novo para gravar.");
   }
   const unicas = new Map();
   for (const l of todas) {

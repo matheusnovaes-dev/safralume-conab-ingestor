@@ -1,0 +1,30 @@
+name: Ingest Datagro boi indicator by state
+
+on:
+  schedule:
+    # 2x por dia (9h40 e 19h10 America/Sao_Paulo): a fonte publica uma vez por dia, então mais que isso seria pedir à toa.
+    # Minuto fora da hora cheia para o GitHub Actions não atrasar o run.
+    - cron: "40 12 * * *"
+    - cron: "10 22 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      # Guarda o Last-Modified da última coleta: página que não mudou não é baixada de novo (GET condicional).
+      - uses: actions/cache@v4
+        with:
+          path: .cache-coleta
+          key: coleta-datagro-boi-${{ github.run_id }}
+          restore-keys: coleta-datagro-boi-
+      - name: Install dependencies
+        run: bun install
+      - name: Run ingestion
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: bun run ingest-datagro-boi.mjs

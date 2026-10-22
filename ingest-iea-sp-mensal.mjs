@@ -1,5 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 
+import { atrasoInicial, buscarComCuidado, esperarComVariacao, jaCaptadoHa } from "./coleta-educada.mjs";
+
 // IEA-SP, série MENSAL de "Preços Médios Recebidos pelos Agricultores" (estado de SP). É outra base que a diária
 // (ingest-iea-sp.mjs): ASP.NET WebForms (nia1/precos_medios.aspx), tem cana de açúcar, leite, suíno, ovos e dezenas de
 // hortifrutis que a série diária não traz. Defasagem de uns 4 meses (em out/2026 o último mês era jun/2026): a data
@@ -83,9 +85,7 @@ export function extrairLinhas(html) {
 }
 
 async function abrirPagina() {
-  const res = await fetch(URL_PAGINA, { headers: { "User-Agent": UA } });
-  if (!res.ok) throw new Error(`IEA mensal: HTTP ${res.status} ao abrir a página`);
-  const html = await res.text();
+  const { texto: html, res } = await buscarComCuidado(URL_PAGINA, { ua: UA });
   const campo = (nome) => html.match(new RegExp(`name="${nome}"[^>]*value="([^"]*)"`))?.[1];
   const viewstate = campo("__VIEWSTATE");
   if (!viewstate) throw new Error("IEA mensal: __VIEWSTATE não encontrado (layout mudou?)");
@@ -119,13 +119,12 @@ async function consultar(pagina, produtos, inicio, fim) {
   corpo.set("cmbPeriodo_Final", fim);
   for (const p of produtos) corpo.set(p.campo, "on");
   corpo.set("imgPesquisar", "Pesquisar");
-  const res = await fetch(URL_PAGINA, {
-    method: "POST",
-    headers: { "User-Agent": UA, "Content-Type": "application/x-www-form-urlencoded", Cookie: pagina.cookie, Referer: URL_PAGINA },
-    body: corpo.toString(),
+  const { texto: html } = await buscarComCuidado(URL_PAGINA, {
+    metodo: "POST",
+    ua: UA,
+    headers: { "Content-Type": "application/x-www-form-urlencoded", Cookie: pagina.cookie, Referer: URL_PAGINA },
+    corpo: corpo.toString(),
   });
-  if (!res.ok) throw new Error(`IEA mensal: HTTP ${res.status} na consulta`);
-  const html = await res.text();
   const linhas = extrairLinhas(html);
   const total = Number(html.match(/(\d+)\s+registro/i)?.[1] ?? linhas.length);
   if (total > linhas.length) throw new Error(`IEA mensal: ${total} registros na página mas só ${linhas.length} lidos (paginação?)`);
@@ -133,6 +132,9 @@ async function consultar(pagina, produtos, inicio, fim) {
 }
 
 async function run() {
+  // O IEA fecha um mês novo por vez (a série tem ~4 meses de atraso): uma coleta a cada poucos dias basta.
+  if (!DRY_RUN && (await jaCaptadoHa(supabase, { fonte: FONTE, horas: 72 }))) return console.log("IEA mensal já coletado nas últimas 72 h: nada a pedir.");
+  await atrasoInicial();
   const pagina = await abrirPagina();
   const inicio = pagina.periodos[0].valor;
   const fim = pagina.periodos.at(-1).valor;
@@ -145,7 +147,7 @@ async function run() {
     const lote = alvo.slice(i, i + LOTE_DE_PRODUTOS);
     const linhas = await consultar(pagina, lote, inicio, fim);
     todas.push(...linhas);
-    await new Promise((r) => setTimeout(r, 250));
+    await esperarComVariacao(400, 300);
   }
   console.log(`${todas.length} linha(s) lidas.`);
 
