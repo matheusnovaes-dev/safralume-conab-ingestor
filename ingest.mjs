@@ -77,7 +77,19 @@ async function bootstrap(page) {
     waitUntil: "domcontentloaded",
     timeout: 60000,
   });
-  await page.waitForSelector("#range-input", { timeout: 30000 });
+  try {
+    await page.waitForSelector("#range-input", { timeout: 30000 });
+  } catch (err) {
+    // Achado 2026-10-21: o servidor da Conab passou a mostrar a página padrão do Apache ("It works!") no lugar do app de
+    // preços. O log só dizia "timeout esperando #range-input", sem a causa. Diz a causa (queda deles, não nossa).
+    const texto = await page.locator("body").innerText({ timeout: 3000 }).catch(() => "");
+    if (/Apache2 Debian Default Page|It works!/i.test(texto)) {
+      throw new Error(
+        "Conab fora do ar: o servidor mostra a página padrão do Apache, sem o app de preços. Nada a corrigir aqui; as próximas rodadas pegam quando o site voltar.",
+      );
+    }
+    throw err;
+  }
   await page.waitForTimeout(1500);
 
   await page.locator("#range-input").click();

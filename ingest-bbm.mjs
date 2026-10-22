@@ -76,10 +76,34 @@ const BLOCO_ESTADO_RE =
   /back-groun-azul">[\s\S]*?b-grupo-1">\s*([^<]+?)\s*<\/div>[\s\S]*?vc_list">([\s\S]*?)<\/ul>/g;
 const LINHA_PRACA_RE = /c-grupo-1">\s*([^<]+?)\s*<\/div>[\s\S]*?c-grupo-2">\s*([^<]+?)\s*<\/div>/g;
 
-async function run() {
-  const res = await fetch(URL_COTACOES, { headers: { "User-Agent": UA } });
+// Nova tentativa com espera crescente: uma oscilação de rede do GitHub ou um 5xx passageiro do site (ou do Supabase) não
+// pode derrubar a rodada inteira (21/10/2026: uma rodada caiu em 16 s e a seguinte, igual, rodou normal).
+const TENTATIVAS = 4;
+async function comRetry(rotulo, fn) {
+  for (let i = 1; i <= TENTATIVAS; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (i === TENTATIVAS) throw err;
+      const espera = 4000 * i * i;
+      console.error(`${rotulo}: tentativa ${i}/${TENTATIVAS} falhou (${err.message ?? err}); nova tentativa em ${espera / 1000}s.`);
+      await new Promise((r) => setTimeout(r, espera));
+    }
+  }
+}
+
+async function abrirPagina() {
+  const res = await fetch(URL_COTACOES, { headers: { "User-Agent": UA }, signal: AbortSignal.timeout(45_000) });
   if (!res.ok) throw new Error(`Falha ao abrir a página: HTTP ${res.status}`);
   const html = await res.text();
+  if (!/Atualização das Cotações - \d{2}\/\d{2}\/\d{4}/.test(html)) {
+    throw new Error("Página sem a data de atualização (resposta incompleta ou página de erro).");
+  }
+  return html;
+}
+
+async function run() {
+  const html = await comRetry("Abrir a página", abrirPagina);
 
   const dataMatch = html.match(/Atualização das Cotações - (\d{2})\/(\d{2})\/(\d{4})/);
   if (!dataMatch) throw new Error("Não encontrei a data de atualização na página.");
@@ -144,13 +168,12 @@ async function run() {
   }
 
   console.log("Gravando no projeto Supabase:", new URL(SUPABASE_URL).host);
-  const { error } = await supabase
-    .from("precos")
-    .upsert(dedupedRows, { onConflict: "produto,uf,regiao,data_referencia" });
-  if (error) {
-    console.error("Erro ao gravar:", error);
-    process.exit(1);
-  }
+  await comRetry("Gravar no Supabase", async () => {
+    const { error } = await supabase
+      .from("precos")
+      .upsert(dedupedRows, { onConflict: "produto,uf,regiao,data_referencia" });
+    if (error) throw new Error(error.message ?? JSON.stringify(error));
+  });
   console.log("OK. Linhas gravadas:", dedupedRows.length);
 }
 
