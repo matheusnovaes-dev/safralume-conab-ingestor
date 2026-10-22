@@ -176,36 +176,36 @@ function extrairLinhas(html, produtoPadronizado) {
 async function run() {
   const sessao = await obterSessao();
 
-  // Janela estreita de propósito — o site rejeita silenciosamente (retorna
-  // "sem preços" sem erro) quando o intervalo é largo demais, achado
-  // testando (funcionou com 3 dias, falhou com ~1 mês). Também achado
-  // testando: independente da largura da janela, a consulta só devolve UM
-  // dia por vez (o mais recente disponível dentro do intervalo) — não é
-  // bug daqui, é assim que a fonte responde. Isso não perde dado num cron
-  // diário (cada rodada pega o dia novo que tiver saído), só precisa de
-  // folga suficiente pro atraso de publicação (3-5 dias úteis, achado
-  // testando) — por isso 10 dias, bem longe do limite superior da janela.
-  const hoje = new Date();
-  const inicio = new Date(hoje);
-  inicio.setUTCDate(inicio.getUTCDate() - 10);
+  // A página só devolve o dia da data INICIAL (startDate): a data final é ignorada e, se o dia inicial não tem preço (fim
+  // de semana, feriado), responde "Não há preços" mesmo havendo dados nos dias seguintes (achado 2026-10-22: com a janela
+  // de 10 dias da versão antiga, a coleta pegava sempre o dia de 10 dias atrás e, caindo em sábado/domingo/feriado, vinha
+  // vazia; a base ficou parada em 09/10 enquanto o IEA já tinha 21/10, e o job aparecia "verde"). Agora consulta cada dia
+  // da janela, um a um: primeiro a soja como sonda (dia sem preço é pulado) e, se há dado, todos os produtos.
+  const DIAS = Number(process.env.IEA_DIAS ?? 8);
   const fmt = (d) => d.toLocaleDateString("pt-BR", { timeZone: "UTC" });
-  const startDate = fmt(inicio);
-  const endDate = fmt(hoje);
-  console.log(`Período: ${startDate} até ${endDate}`);
-
+  const hoje = new Date();
   const todasLinhas = [];
-  for (const [codigo, produtoPadronizado] of Object.entries(PRODUTOS)) {
-    const html = await buscarProduto(sessao, codigo, startDate, endDate);
-    const linhas = extrairLinhas(html, produtoPadronizado);
-    if (linhas.length > 0) console.log(`  ${produtoPadronizado}: ${linhas.length} linha(s)`);
-    todasLinhas.push(...linhas);
-    await new Promise((r) => setTimeout(r, 200));
+  const diasComDado = [];
+  for (let n = 0; n < DIAS; n++) {
+    const d = new Date(hoje);
+    d.setUTCDate(d.getUTCDate() - n);
+    const dia = fmt(d);
+    const sonda = extrairLinhas(await buscarProduto(sessao, 1126, dia, dia), "SONDA");
+    if (sonda.length === 0) continue;
+    diasComDado.push(dia);
+    for (const [codigo, produtoPadronizado] of Object.entries(PRODUTOS)) {
+      const html = await buscarProduto(sessao, codigo, dia, dia);
+      todasLinhas.push(...extrairLinhas(html, produtoPadronizado));
+      await new Promise((r) => setTimeout(r, 150));
+    }
   }
+  console.log(`Dias com preço nos últimos ${DIAS}: ${diasComDado.join(", ") || "nenhum"}.`);
   console.log(`${todasLinhas.length} linha(s) coletada(s) no total.`);
 
   if (todasLinhas.length === 0) {
-    console.log("Nenhuma linha extraída. Abortando sem gravar.");
-    return;
+    // Falha de verdade (antes saía com código 0 e o job ficava verde): o vigia de frescor e o e-mail do GitHub avisam.
+    console.error(`Nenhuma linha extraída em ${DIAS} dias. Abortando sem gravar.`);
+    process.exit(1);
   }
 
   const byKey = new Map();

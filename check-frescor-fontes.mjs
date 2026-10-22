@@ -18,7 +18,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 const FONTES = [
   { fonte: "BBM", maxDiasRef: 5, maxHorasGravacao: 72 },
   { fonte: "Conab", maxDiasRef: 16, maxHorasGravacao: 36 },
-  { fonte: "IEA-SP", maxDiasRef: 16, maxHorasGravacao: 72 },
+  { fonte: "IEA-SP", maxDiasRef: 6, maxHorasGravacao: 72 },
   // Série mensal do IEA: a fonte publica com ~4 meses de atraso (jun/2026 em out/2026) e a data gravada é o dia 1 do mês.
   { fonte: "IEA-SP (mensal)", maxDiasRef: 175, maxHorasGravacao: 240 },
   { fonte: "DERAL/SEAB-PR", maxDiasRef: 14 },
