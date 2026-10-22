@@ -21,6 +21,8 @@ const FONTES = [
   { fonte: "IEA-SP", maxDiasRef: 6, maxHorasGravacao: 72 },
   // Série mensal do IEA: a fonte publica com ~4 meses de atraso (jun/2026 em out/2026) e a data gravada é o dia 1 do mês.
   { fonte: "IEA-SP (mensal)", maxDiasRef: 175, maxHorasGravacao: 240 },
+  // Atacado diário do IEA (tabela própria, fora de `precos`): dia útil sem dado é normal, mais de 6 dias não.
+  { fonte: "IEA-SP (atacado)", tabela: "precos_atacado", maxDiasRef: 6, maxHorasGravacao: 72 },
   { fonte: "DERAL/SEAB-PR", maxDiasRef: 14 },
   { fonte: "EMATER/RS-Ascar", maxDiasRef: 12 },
   { fonte: "Imea", maxDiasRef: 14 },
@@ -34,14 +36,14 @@ const problemas = [];
 
 for (const f of FONTES) {
   const { data: ref } = await supabase
-    .from("precos")
+    .from(f.tabela ?? "precos")
     .select("data_referencia")
     .eq("fonte", f.fonte)
     .lte("data_referencia", new Date().toISOString().slice(0, 10))
     .order("data_referencia", { ascending: false })
     .limit(1);
   const { data: gravado } = await supabase
-    .from("precos")
+    .from(f.tabela ?? "precos")
     .select("updated_at")
     .eq("fonte", f.fonte)
     .order("updated_at", { ascending: false })

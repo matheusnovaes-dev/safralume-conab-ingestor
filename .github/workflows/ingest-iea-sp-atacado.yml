@@ -1,0 +1,25 @@
+name: Ingest IEA-SP wholesale prices
+
+on:
+  schedule:
+    # Diário, 3x (mesmo padrão da série diária de recebidos): 9h, 17h e 23h America/Sao_Paulo. Minuto 25 (não 0) para o
+    # GitHub Actions não atrasar o run (achado de 2026-10-10 em reativacao.yml).
+    - cron: "25 12 * * *"
+    - cron: "25 20 * * *"
+    - cron: "25 2 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - name: Install dependencies
+        run: bun install
+      - name: Run ingestion
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: bun run ingest-iea-sp-atacado.mjs
