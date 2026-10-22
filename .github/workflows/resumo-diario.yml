@@ -1,12 +1,8 @@
 name: Resumo diário (bom dia resumido)
 
 on:
-  schedule:
-    # De hora em hora — cada produtor escolhe o próprio horário
-    # (resumo_diario_hora), o cron só processa quem bateu com a hora atual.
-    # Minuto 11 (não 0) de propósito, mesmo achado de 2026-10-10 em
-    # reativacao.yml.
-    - cron: "11 * * * *"
+  # O disparo agendado vive no n8n (workflow "Resumo diário (de hora em hora, minuto 5)", id oZpp1qEWd7KfSIqY): o cron do
+  # GitHub atrasava e pulava horas (falhou em 21/10) e gastava minutos do plano. Este workflow ficou só para disparo manual.
   workflow_dispatch: {}
 
 jobs:
