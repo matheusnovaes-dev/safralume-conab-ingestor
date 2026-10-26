@@ -23,7 +23,7 @@ export const LIMITES = {
   minimoDePares: 2, // praças em comum necessárias para comparar
   toleranciaDaMediaPct: 2.5, // |diferença média| máxima (praças em comum)
   toleranciaAbsolutaPct: 3.5, // diferença absoluta média máxima (praças em comum)
-  toleranciaDaMediaDaUfPct: 4.0, // sem praças em comum suficientes: compara a média da UF, com margem maior (conjuntos de praças diferentes)
+  toleranciaDaMediaDaUfPct: 3.0, // comparação pela média da UF (preço oficial do estado, ou poucas praças em comum): margem de 3%. Boi em MT no 1º lote: Fonte B -3,7% do Datagro, ficou de fora
 };
 
 /**
