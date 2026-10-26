@@ -94,3 +94,15 @@ export function escolherPracas(pracas, outras, k = MAX_PRACAS_POR_UF) {
   const ordenadas = [...interior].sort((a, b) => Number(conhecidas.has(norm(b.cidade))) - Number(conhecidas.has(norm(a.cidade))) || norm(a.cidade).localeCompare(norm(b.cidade)));
   return [...ordenadas.slice(0, k), ...portos];
 }
+
+// ---- grafia e itens que não entram ----
+// O app acha o produto por texto COM acento (ilike '%maçã%', '%café%conillon%'); o Fonte B escreve alguns nomes sem acento ou de outro jeito.
+const GRAFIA = [
+  [/\bArabica\b/gi, "Arábica"], [/\bConilon\b/gi, "Conillon"], [/\bMaça\b/gi, "Maçã"], [/\bMaracuja\b/gi, "Maracujá"], [/\bAçucar\b/gi, "Açúcar"],
+  [/\bPessego\b/gi, "Pêssego"], [/\bMelao\b/gi, "Melão"], [/\bAzevem\b/gi, "Azevém"], [/\bHavai\b/gi, "Havaí"], [/\bAlgodao\b/gi, "Algodão"],
+  [/\bFeijao\b/gi, "Feijão"], [/\bPimentao\b/gi, "Pimentão"], [/\bAbobora\b/gi, "Abóbora"], [/\bLimao\b/gi, "Limão"], [/\bMamao\b/gi, "Mamão"],
+];
+export const corrigirGrafia = (nome) => GRAFIA.reduce((n, [re, certo]) => n.replace(re, certo), String(nome));
+
+/** Fora: atacado (não é preço ao produtor; tem tabela própria), leite (tem fonte e tratamento próprios) e etanol (combustível). */
+export const ehProdutoIgnorado = (nome) => /atacado|^leite\b|etanol/i.test(String(nome).trim());

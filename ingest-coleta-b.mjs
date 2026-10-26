@@ -1,7 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { chromium } from "playwright";
 import { writeFileSync } from "node:fs";
-import { compararComNossasFontes, escolherPracas, nomeDaPraca, norm } from "./coleta-b-regras.mjs";
+import { compararComNossasFontes, corrigirGrafia, ehProdutoIgnorado, escolherPracas, nomeDaPraca, norm } from "./coleta-b-regras.mjs";
 
 /**
  * Fonte B (cotações do mercado físico, preço ao produtor por praça): TODOS os produtos, uma vez por dia, navegando como uma pessoa.
@@ -192,8 +192,9 @@ const UNIDADES = [
   [/1\s*cab$/i, () => "cabeça"],
   [/1\s*@$/i, () => "@"],
 ];
-function mapearProduto(nome) {
-  const nosso = NOME_NOSSO[nome.trim().toLowerCase()];
+function mapearProduto(nomeOriginal) {
+  const nome = corrigirGrafia(nomeOriginal);
+  const nosso = NOME_NOSSO[nomeOriginal.trim().toLowerCase()];
   if (nosso) return { produto: nosso[0], unidade: nosso[1], unificado: true };
   let unidade = "unidade";
   for (const [re, f] of UNIDADES) {
@@ -206,7 +207,7 @@ function mapearProduto(nome) {
   return { produto: `${nome.trim().toUpperCase()} (${FONTE})`, unidade, unificado: false };
 }
 /** Palavra que identifica a cultura do produto, para saber se já temos algo dela naquele estado. */
-const chaveDaCultura = (nome) => semAcento(nome).toLowerCase().split(/[\s,/]+/).filter((w) => w.length > 2 && !["sc", "cx", "em", "de", "do", "da", "tipo"].includes(w))[0] ?? "";
+const chaveDaCultura = (nome) => semAcento(corrigirGrafia(nome)).toLowerCase().split(/[\s,/]+/).filter((w) => w.length > 2 && !["sc", "cx", "em", "de", "do", "da", "tipo"].includes(w))[0] ?? "";
 const semAcentoMinusculo = (t) => norm(t);
 const dia = (n) => new Date(n * 86_400_000).toISOString().slice(0, 10);
 
@@ -306,10 +307,9 @@ async function main() {
   const porUf = {};
   const decisoes = [];
   for (const r of coletados) {
-    // Preço de ATACADO (Ceasa, central de abastecimento) não é o que o produtor recebe: o app trata `precos` como preço ao produtor e o atacado
-    // tem tabela própria (precos_atacado). Produto de atacado do Fonte B fica de fora.
-    if (/atacado/i.test(r.nome)) {
-      pulados.atacado = (pulados.atacado ?? 0) + (r.pracas?.length ?? 0);
+    // Atacado (Ceasa), leite e etanol não entram (ver ehProdutoIgnorado): o app trata `precos` como preço ao produtor.
+    if (ehProdutoIgnorado(r.nome)) {
+      pulados.ignorados = (pulados.ignorados ?? 0) + (r.pracas?.length ?? 0);
       continue;
     }
     const m = mapearProduto(r.nome);
