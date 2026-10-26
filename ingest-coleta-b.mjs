@@ -1,0 +1,302 @@
+import { createClient } from "@supabase/supabase-js";
+import { chromium } from "playwright";
+import { writeFileSync } from "node:fs";
+
+/**
+ * Fonte B (cotações do mercado físico, preço ao produtor por praça): TODOS os produtos, uma vez por dia, navegando como uma pessoa.
+ *
+ * Autorização: uso do Playwright na plataforma autorizado pelo Fonte B (documento guardado fora do repositório). Por isso: navegador Chromium
+ * comum, ritmo e ordem de pessoa (pausas aleatórias, produtos embaralhados), e nenhum truque contra detecção. Se aparecer bloqueio (403/429,
+ * captcha, "just a moment"), o script PARA com erro claro: nunca insiste nem contorna.
+ *
+ * Como o site entrega: a página de cada produto (/cotacoes/<slug>) traz as 20 primeiras praças no HTML; o botão "Carregar mais" busca as
+ * próximas 20. Lemos o que o próprio navegador baixa (payload da página + respostas do botão), sem chamar endpoint por fora.
+ *
+ * Regra de gravação ("complementar"): o Fonte B agrega as mesmas fontes que já temos (BBM, IEA-SP...) e em algumas praças difere 5 a 7%. Para
+ * NÃO mudar nenhuma resposta que já funciona, só gravamos o produto/UF que HOJE não tem dado nosso (de outra fonte) nos últimos 14 dias.
+ * Nunca sobrescreve linha existente (ignoreDuplicates). Variáveis: FONTE_B_LIMITE=N (só N produtos, para teste), FONTE_B_SO_LER=1
+ * (não grava, só analisa), DRY=1 (idem, sem nem ler o banco).
+ */
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const SEM_BANCO = !SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY || process.env.DRY === "1";
+const SO_LER = process.env.FONTE_B_SO_LER === "1" || SEM_BANCO;
+const supabase = SEM_BANCO ? null : createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+const LIMITE = Number(process.env.FONTE_B_LIMITE ?? 0);
+
+const FONTE = "Fonte B";
+const BASE = "https://www.coleta-b.com.br";
+const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36";
+const DIAS_MAXIMOS_DE_ATRASO = 10; // praça com preço mais velho que isso não entra
+const DIAS_DO_DADO_NOSSO = 14; // "já temos dado" = linha de outra fonte nos últimos 14 dias
+const MARCAS_DE_BLOQUEIO = /just a moment|cf-chl|captcha|attention required|access denied|enable javascript and cookies|too many requests/i;
+
+class BloqueioDetectado extends Error {
+  constructor(onde, motivo) {
+    super(`Bloqueio detectado em ${onde}: ${motivo}. Coleta interrompida de propósito (não insistimos nem contornamos).`);
+    this.name = "BloqueioDetectado";
+  }
+}
+
+// ---- ritmo de pessoa ----
+const esperar = (ms) => new Promise((r) => setTimeout(r, ms));
+const entre = (a, b) => a + Math.random() * (b - a);
+const pausa = (a = 2500, b = 6500) => esperar(entre(a, b));
+const embaralhar = (xs) => xs.map((x) => [Math.random(), x]).sort((a, b) => a[0] - b[0]).map((p) => p[1]);
+
+async function gestoDeLeitura(p) {
+  // uma pessoa mexe o mouse e rola a página enquanto lê
+  await p.mouse.move(entre(200, 900), entre(150, 600), { steps: 8 }).catch(() => {});
+  if (Math.random() < 0.6) await p.mouse.wheel(0, entre(200, 700)).catch(() => {});
+  await esperar(entre(400, 1200));
+}
+
+function conferirBloqueio(resposta, onde, texto = "") {
+  const status = resposta?.status?.() ?? 200;
+  if ([401, 403, 429, 503].includes(status)) throw new BloqueioDetectado(onde, `HTTP ${status}`);
+  if (MARCAS_DE_BLOQUEIO.test(texto.slice(0, 4000))) throw new BloqueioDetectado(onde, "desafio de robô / bloqueio na página");
+}
+
+// ---- produtos ----
+const semAcento = (s) => s.normalize("NFD").replace(/[̀-ͯ]/g, "");
+export const slugDe = (nome) =>
+  semAcento(nome).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+
+async function listarProdutos(p) {
+  await p.goto(`${BASE}/cotacoes/soja-em-grao-sc-60kg`, { waitUntil: "domcontentloaded", timeout: 60_000 }).then((r) => conferirBloqueio(r, "página inicial"));
+  await p.waitForLoadState("load", { timeout: 15_000 }).catch(() => {});
+  await pausa(2500, 4500);
+  await p.getByText("Buscar produtos", { exact: false }).first().click();
+  await pausa(1500, 2500);
+  const vistos = new Set();
+  for (let i = 0; i < 40; i++) {
+    const itens = await p.locator("[role=dialog] label, dialog label").evaluateAll((els) => els.map((e) => e.innerText.trim().replace(/\n+/g, " | ")));
+    const antes = vistos.size;
+    itens.forEach((x) => vistos.add(x));
+    if (vistos.size === antes && i > 2) break;
+    await p.locator("[role=dialog] label, dialog label").last().scrollIntoViewIfNeeded().catch(() => {});
+    await esperar(entre(300, 700));
+  }
+  return [...vistos]
+    .map((x) => {
+      const [nome, n] = x.split(" | ");
+      return { nome: nome.trim(), series: Number((n ?? "0").replace(/\./g, "")) };
+    })
+    .filter((x) => x.nome);
+}
+
+/** Extrai o array `pracas` do payload embutido na página (primeiras 20). */
+function pracasDoHtml(html) {
+  const blocos = [...html.matchAll(/self\.__next_f\.push\(\[1,"(.*?)"\]\)/gs)].map((m) => m[1]);
+  for (const b of blocos) {
+    let txt;
+    try {
+      txt = JSON.parse(`"${b}"`);
+    } catch {
+      continue;
+    }
+    const i = txt.indexOf('"pracas":[');
+    if (i < 0) continue;
+    const k = txt.indexOf("[", i);
+    let d = 0;
+    for (let pos = k; pos < txt.length; pos++) {
+      if (txt[pos] === "[") d++;
+      else if (txt[pos] === "]" && --d === 0) {
+        try {
+          const total = Number(/"numPracas":(\d+)/.exec(txt)?.[1] ?? 0);
+          return { pracas: JSON.parse(txt.slice(k, pos + 1)), total };
+        } catch {
+          return null;
+        }
+      }
+    }
+  }
+  return null;
+}
+
+async function coletarProduto(p, produto) {
+  const lotes = [];
+  const ouvinte = async (r) => {
+    if (r.url().includes("/api/cotacoes/busca/pracas")) {
+      try {
+        lotes.push(await r.json());
+      } catch {
+        /* resposta sem JSON: ignora */
+      }
+    }
+  };
+  p.on("response", ouvinte);
+  try {
+    const slug = slugDe(produto.nome);
+    const r = await p.goto(`${BASE}/cotacoes/${slug}`, { waitUntil: "domcontentloaded", timeout: 60_000 });
+    await p.waitForLoadState("load", { timeout: 15_000 }).catch(() => {});
+    await esperar(entre(800, 1800));
+    if (r?.status?.() === 404) return { ...produto, slug, erro: "404 (slug não bate)", pracas: [] };
+    const html = await p.content();
+    conferirBloqueio(r, produto.nome, html);
+    const primeira = pracasDoHtml(html);
+    if (!primeira) return { ...produto, slug, erro: "sem payload de praças na página", pracas: [] };
+    await gestoDeLeitura(p);
+    let cliques = 0;
+    while (cliques < 60) {
+      const botao = p.getByText("Carregar mais", { exact: false }).first();
+      if (!(await botao.count())) break;
+      await pausa(2200, 5200);
+      await botao.scrollIntoViewIfNeeded().catch(() => {});
+      await botao.click();
+      cliques++;
+      await p.waitForLoadState("networkidle", { timeout: 6000 }).catch(() => {});
+      await esperar(entre(900, 2200));
+    }
+    const pracas = [...primeira.pracas, ...lotes.flatMap((l) => l.pracas ?? [])];
+    return { ...produto, slug, total: primeira.total, cliques, pracas, ok: pracas.length === primeira.total };
+  } finally {
+    p.off("response", ouvinte);
+  }
+}
+
+// ---- mapa para o nosso banco ----
+// Produtos do nosso banco que o Fonte B também tem: usamos exatamente o nome que o resto do app já procura.
+const NOME_NOSSO = {
+  "soja em grão sc 60kg": ["SOJA EM GRÃOS (60 kg)", "60 kg"],
+  "milho seco sc 60kg": ["MILHO EM GRÃOS (60 kg)", "60 kg"],
+  "boi gordo 15kg": ["BOI GORDO (15 kg)", "15 kg"],
+};
+const UNIDADES = [
+  [/sc\s*(\d+(?:[.,]\d+)?)\s*kg/i, (m) => `${m[1]} kg`],
+  [/cx\s*(\d+(?:[.,]\d+)?)\s*kg/i, (m) => `cx ${m[1]} kg`],
+  [/kg\/vivo\s*1\s*kg/i, () => "kg vivo"],
+  [/(\d+(?:[.,]\d+)?)\s*kg$/i, (m) => (m[1] === "1" ? "kg" : `${m[1]} kg`)],
+  [/1\s*ton$/i, () => "ton"],
+  [/1\s*l$/i, () => "litro"],
+  [/1\s*cab$/i, () => "cabeça"],
+  [/1\s*@$/i, () => "@"],
+];
+function mapearProduto(nome) {
+  const nosso = NOME_NOSSO[nome.trim().toLowerCase()];
+  if (nosso) return { produto: nosso[0], unidade: nosso[1] };
+  let unidade = "unidade";
+  for (const [re, f] of UNIDADES) {
+    const m = re.exec(nome.trim());
+    if (m) {
+      unidade = f(m);
+      break;
+    }
+  }
+  return { produto: `${nome.trim().toUpperCase()} (${FONTE})`, unidade };
+}
+/** Palavra que identifica a cultura do produto, para saber se já temos algo dela naquele estado. */
+const chaveDaCultura = (nome) => semAcento(nome).toLowerCase().split(/[\s,/]+/).filter((w) => w.length > 2 && !["sc", "cx", "em", "de", "do", "da", "tipo"].includes(w))[0] ?? "";
+const dia = (n) => new Date(n * 86_400_000).toISOString().slice(0, 10);
+
+async function carregarCobertura() {
+  // produto (normalizado) por UF das OUTRAS fontes, últimos 14 dias
+  const desde = new Date(Date.now() - DIAS_DO_DADO_NOSSO * 86_400_000).toISOString().slice(0, 10);
+  const por = new Map();
+  for (let off = 0; off < 40_000; off += 1000) {
+    const { data, error } = await supabase.from("precos").select("uf, produto, fonte").gte("data_referencia", desde).neq("fonte", FONTE).range(off, off + 999);
+    if (error) throw new Error(`erro lendo a cobertura: ${error.message}`);
+    if (!data?.length) break;
+    for (const x of data) {
+      if (!por.has(x.uf)) por.set(x.uf, new Set());
+      por.get(x.uf).add(semAcento(x.produto).toLowerCase());
+    }
+    if (data.length < 1000) break;
+  }
+  return por;
+}
+
+async function main() {
+  const inicio = Date.now();
+  if (process.env.COLETA_SEM_ATRASO !== "1" && !LIMITE && process.env.GITHUB_ACTIONS) await esperar(entre(0, 15 * 60_000)); // hora de chegada de pessoa, não de relógio
+  const navegador = await chromium.launch();
+  const ctx = await navegador.newContext({ userAgent: UA, locale: "pt-BR", timezoneId: "America/Sao_Paulo", viewport: { width: 1366 + Math.floor(Math.random() * 400), height: 800 + Math.floor(Math.random() * 200) } });
+  const p = await ctx.newPage();
+  const coletados = [];
+  let bloqueio = null;
+  try {
+    const todos = await listarProdutos(p);
+    console.log(`Fonte B: ${todos.length} produtos no catálogo.`);
+    let fila = embaralhar(todos);
+    if (LIMITE) fila = fila.slice(0, LIMITE);
+    let n = 0;
+    for (const produto of fila) {
+      await pausa(3000, 8000);
+      if (++n % 12 === 0) await pausa(15_000, 40_000); // "pausa para o café"
+      let r;
+      try {
+        r = await coletarProduto(p, produto);
+      } catch (e) {
+        if (e instanceof BloqueioDetectado) throw e;
+        r = { ...produto, slug: slugDe(produto.nome), erro: `falha: ${String(e.message).split("\n")[0].slice(0, 90)}`, pracas: [] };
+      }
+      coletados.push(r);
+      console.log(`  [${n}/${fila.length}] ${produto.nome}: ${r.erro ? `ERRO ${r.erro}` : `${r.pracas.length}/${r.total} praças${r.ok ? "" : " (INCOMPLETO)"}`}`);
+    }
+  } catch (e) {
+    if (e instanceof BloqueioDetectado) bloqueio = e;
+    else throw e;
+  } finally {
+    await navegador.close();
+  }
+
+  // ---- gravação ----
+  const cobertura = SEM_BANCO ? new Map() : await carregarCobertura();
+  const linhas = [];
+  const pulados = { jaTemosDado: 0, velha: 0, invalida: 0 };
+  const porUf = {};
+  for (const r of coletados) {
+    const { produto, unidade } = mapearProduto(r.nome);
+    const chave = chaveDaCultura(r.nome);
+    for (const x of r.pracas ?? []) {
+      if (!x.uf || !x.cidade || !Number.isFinite(x.preco) || x.preco <= 0) {
+        pulados.invalida++;
+        continue;
+      }
+      const data = dia(x.dia);
+      if ((Date.now() - Date.parse(`${data}T00:00:00Z`)) / 86_400_000 > DIAS_MAXIMOS_DE_ATRASO) {
+        pulados.velha++;
+        continue;
+      }
+      if (cobertura.get(x.uf)?.size && [...cobertura.get(x.uf)].some((s) => s.includes(chave))) {
+        pulados.jaTemosDado++;
+        continue;
+      }
+      linhas.push({ produto, uf: x.uf, regiao: x.cidade, nivel_comercializacao: "PRODUTOR", preco: x.preco, unidade, data_referencia: data, fonte: FONTE });
+      porUf[x.uf] = (porUf[x.uf] ?? 0) + 1;
+    }
+  }
+  const unicas = [...new Map(linhas.map((l) => [`${l.produto}|${l.uf}|${l.regiao}|${l.data_referencia}`, l])).values()];
+  const resumo = {
+    produtos: coletados.length,
+    produtosComErro: coletados.filter((r) => r.erro).map((r) => `${r.nome}: ${r.erro}`),
+    produtosIncompletos: coletados.filter((r) => !r.erro && !r.ok).map((r) => `${r.nome}: ${r.pracas.length}/${r.total}`),
+    pracasLidas: coletados.reduce((a, r) => a + (r.pracas?.length ?? 0), 0),
+    linhasParaGravar: unicas.length,
+    pulados,
+    gravandoPorUf: porUf,
+    bloqueio: bloqueio?.message ?? null,
+    minutos: Math.round((Date.now() - inicio) / 60_000),
+  };
+  console.log("\nRESUMO", JSON.stringify(resumo, null, 1));
+  writeFileSync("coleta-b-snapshot.json", JSON.stringify({ resumo, coletados: coletados.map((r) => ({ nome: r.nome, total: r.total, erro: r.erro, pracas: r.pracas })) }));
+
+  if (!SO_LER) {
+    for (let i = 0; i < unicas.length; i += 500) {
+      const { error } = await supabase.from("precos").upsert(unicas.slice(i, i + 500), { onConflict: "produto,uf,regiao,data_referencia", ignoreDuplicates: true });
+      if (error) throw new Error(`erro gravando: ${error.message}`);
+    }
+    console.log(`Gravadas até ${unicas.length} linhas (existentes não são sobrescritas).`);
+  } else console.log("Modo só leitura: nada foi gravado.");
+  if (bloqueio) {
+    console.error(bloqueio.message);
+    process.exit(2);
+  }
+}
+
+if (import.meta.main ?? process.argv[1]?.endsWith("ingest-coleta-b.mjs")) {
+  main().catch((e) => {
+    console.error(e);
+    process.exit(1);
+  });
+}

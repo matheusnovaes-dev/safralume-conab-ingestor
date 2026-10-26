@@ -1,0 +1,36 @@
+name: Ingest Fonte B (todos os produtos, 1x por dia)
+
+on:
+  schedule:
+    # Uma vez por dia, de manhã (06h20 America/Sao_Paulo = 09h20 UTC). O script ainda espera de 0 a 15 min ao
+    # chegar, para o horário de acesso variar como o de uma pessoa. Minuto 20 pelo mesmo motivo dos outros
+    # agendamentos: o Actions atrasa a hora cheia.
+    - cron: "20 9 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    # ~2 a 3 h de navegação com ritmo humano (248 produtos, ~440 ações) + a espera inicial; repositório público: minutos grátis
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - name: Install dependencies
+        run: bun install
+      - name: Install Playwright Chromium
+        run: bunx playwright install --with-deps chromium
+      - name: Run ingestion
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          # SÓ LEITURA até validar o primeiro ensaio completo (nada é gravado). Trocar para "0" para ligar a gravação.
+          FONTE_B_SO_LER: "1"
+        run: bun run ingest-coleta-b.mjs
+      - name: Upload run snapshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coleta-b-snapshot
+          path: coleta-b-snapshot.json
+          retention-days: 7
