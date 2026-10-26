@@ -143,7 +143,20 @@ async function coletarProduto(p, produto) {
       if (!(await botao.count())) break;
       await pausa(2200, 5200);
       await botao.scrollIntoViewIfNeeded().catch(() => {});
-      await botao.click();
+      // anúncio ou aviso na frente do botão: fecha com Escape e tenta de novo, como uma pessoa faria; por último, clique direto no elemento
+      let clicou = false;
+      for (const tentativa of [1, 2, 3]) {
+        try {
+          await botao.click({ timeout: 8000, force: tentativa === 3 });
+          clicou = true;
+          break;
+        } catch {
+          await p.keyboard.press("Escape").catch(() => {});
+          await p.mouse.wheel(0, entre(-300, 300)).catch(() => {});
+          await esperar(entre(800, 1800));
+        }
+      }
+      if (!clicou) break;
       cliques++;
       await p.waitForLoadState("networkidle", { timeout: 6000 }).catch(() => {});
       await esperar(entre(900, 2200));
