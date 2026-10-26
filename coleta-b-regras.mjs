@@ -34,32 +34,49 @@ export const LIMITES = {
 export function compararComNossasFontes(coleta-b, outras) {
   const usaveis = (outras ?? []).filter((o) => !ehPracaCif(o.regiao) && Number.isFinite(o.preco) && o.preco > 0);
   if (usaveis.length === 0) return { decisao: "lacuna", pares: 0, mediaPct: null, absPct: null };
-  const ultima = new Map(); // parte normalizada da praça -> preço mais recente
-  for (const o of [...usaveis].sort((a, b) => a.data_referencia.localeCompare(b.data_referencia))) {
-    for (const parte of partesDaPraca(o.regiao)) ultima.set(parte, o.preco);
+  const mediaAg = coleta-b.reduce((x, y) => x + y.preco, 0) / coleta-b.length;
+  const arred = (n) => Math.round(n * 10) / 10;
+
+  // 1) O que o app SERVE hoje: o preço do estado (fonte oficial: DERAL, EMATER, Conab...) quando está em dia (menos de 7 dias atrás do
+  // regional); senão as praças. É contra ISSO que o Fonte B não pode "pular". Ex. real (26/10): soja no PR, DERAL R$ 132,86 (estado),
+  // Fonte B R$ 135,15, BBM R$ 145 em só 3 praças: o servido é o da DERAL, e o Fonte B está +1,7% dele.
+  const estado = usaveis.filter((o) => !o.regiao);
+  const regionais = usaveis.filter((o) => o.regiao);
+  const ultima = (xs) => xs.reduce((m, o) => (o.data_referencia > m ? o.data_referencia : m), "");
+  const dif = (a, b) => Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86_400_000);
+  const estadoEmDia = estado.length > 0 && (regionais.length === 0 || dif(ultima(estado), ultima(regionais)) < 7);
+  if (estadoEmDia) {
+    const ref = estado.filter((o) => o.data_referencia === ultima(estado));
+    const base = ref.reduce((x, o) => x + o.preco, 0) / ref.length;
+    const pct = arred(((mediaAg - base) / base) * 100);
+    return { decisao: Math.abs(pct) <= LIMITES.toleranciaDaMediaDaUfPct ? "concorda" : "diverge", pares: 0, mediaPct: pct, absPct: Math.abs(pct), baseline: "estado" };
+  }
+
+  // 2) O servido são as praças: compara as praças em comum (mesma definição, diferença pequena).
+  const ultimaPorParte = new Map(); // parte normalizada da praça -> preço mais recente
+  for (const o of [...regionais].sort((a, b) => a.data_referencia.localeCompare(b.data_referencia))) {
+    for (const parte of partesDaPraca(o.regiao)) ultimaPorParte.set(parte, o.preco);
   }
   const difs = [];
   for (const a of coleta-b) {
-    const c = norm(a.cidade);
-    const ref = ultima.get(c);
+    const ref = ultimaPorParte.get(norm(a.cidade));
     if (ref && Number.isFinite(a.preco)) difs.push(((a.preco - ref) / ref) * 100);
   }
   if (difs.length < LIMITES.minimoDePares) {
-    // poucas praças em comum: confere pela média da UF (sem praça CIF). Só aprova se estiver bem perto; se estiver longe, segura.
+    // poucas praças em comum: confere pela média da UF; só aprova se estiver bem perto, senão segura.
     const ultimasPorRegiao = new Map();
-    for (const o of [...usaveis].sort((a, b) => a.data_referencia.localeCompare(b.data_referencia))) ultimasPorRegiao.set(o.regiao, o.preco);
+    for (const o of [...regionais].sort((a, b) => a.data_referencia.localeCompare(b.data_referencia))) ultimasPorRegiao.set(o.regiao, o.preco);
     const precosOutras = [...ultimasPorRegiao.values()];
+    if (precosOutras.length < 3) return { decisao: "sem_como_comparar", pares: difs.length, mediaPct: null, absPct: null, baseline: "praças" };
     const mediaOutras = precosOutras.reduce((x, y) => x + y, 0) / precosOutras.length;
-    const mediaAg = coleta-b.reduce((x, y) => x + y.preco, 0) / coleta-b.length;
-    const pct = Math.round(((mediaAg - mediaOutras) / mediaOutras) * 1000) / 10;
-    const temNivelEstado = usaveis.some((o) => !o.regiao);
-    if ((precosOutras.length >= 3 || temNivelEstado) && Math.abs(pct) <= LIMITES.toleranciaDaMediaDaUfPct) return { decisao: "concorda", pares: difs.length, mediaPct: pct, absPct: Math.abs(pct), pelaMediaDaUf: true };
-    return { decisao: "sem_como_comparar", pares: difs.length, mediaPct: pct, absPct: Math.abs(pct) };
+    const pct = arred(((mediaAg - mediaOutras) / mediaOutras) * 100);
+    const ok = Math.abs(pct) <= LIMITES.toleranciaDaMediaDaUfPct;
+    return { decisao: ok ? "concorda" : "sem_como_comparar", pares: difs.length, mediaPct: pct, absPct: Math.abs(pct), pelaMediaDaUf: true, baseline: "praças" };
   }
-  const mediaPct = difs.reduce((s, x) => s + x, 0) / difs.length;
-  const absPct = difs.reduce((s, x) => s + Math.abs(x), 0) / difs.length;
+  const mediaPct = difs.reduce((x, y) => x + y, 0) / difs.length;
+  const absPct = difs.reduce((x, y) => x + Math.abs(y), 0) / difs.length;
   const concorda = Math.abs(mediaPct) <= LIMITES.toleranciaDaMediaPct && absPct <= LIMITES.toleranciaAbsolutaPct;
-  return { decisao: concorda ? "concorda" : "diverge", pares: difs.length, mediaPct: Math.round(mediaPct * 10) / 10, absPct: Math.round(absPct * 10) / 10 };
+  return { decisao: concorda ? "concorda" : "diverge", pares: difs.length, mediaPct: arred(mediaPct), absPct: arred(absPct), baseline: "praças" };
 }
 
 // ---- praças de porto e densidade ----
