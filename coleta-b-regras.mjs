@@ -52,11 +52,28 @@ export function compararComNossasFontes(coleta-b, outras) {
     const mediaOutras = precosOutras.reduce((x, y) => x + y, 0) / precosOutras.length;
     const mediaAg = coleta-b.reduce((x, y) => x + y.preco, 0) / coleta-b.length;
     const pct = Math.round(((mediaAg - mediaOutras) / mediaOutras) * 1000) / 10;
-    if (precosOutras.length >= 3 && Math.abs(pct) <= LIMITES.toleranciaDaMediaDaUfPct) return { decisao: "concorda", pares: difs.length, mediaPct: pct, absPct: Math.abs(pct), pelaMediaDaUf: true };
+    const temNivelEstado = usaveis.some((o) => !o.regiao);
+    if ((precosOutras.length >= 3 || temNivelEstado) && Math.abs(pct) <= LIMITES.toleranciaDaMediaDaUfPct) return { decisao: "concorda", pares: difs.length, mediaPct: pct, absPct: Math.abs(pct), pelaMediaDaUf: true };
     return { decisao: "sem_como_comparar", pares: difs.length, mediaPct: pct, absPct: Math.abs(pct) };
   }
   const mediaPct = difs.reduce((s, x) => s + x, 0) / difs.length;
   const absPct = difs.reduce((s, x) => s + Math.abs(x), 0) / difs.length;
   const concorda = Math.abs(mediaPct) <= LIMITES.toleranciaDaMediaPct && absPct <= LIMITES.toleranciaAbsolutaPct;
   return { decisao: concorda ? "concorda" : "diverge", pares: difs.length, mediaPct: Math.round(mediaPct * 10) / 10, absPct: Math.round(absPct * 10) / 10 };
+}
+
+// ---- praças de porto e densidade ----
+/** Cidades-porto: o app só reconhece praça de porto pelo texto "CIF" no nome (convenção da BBM), então o Fonte B recebe o mesmo sufixo. */
+const PORTOS = new Set(["paranagua", "rio grande", "santos", "sao francisco do sul", "itaqui", "sao luis", "barcarena", "santarem", "tubarao", "antonina", "imbituba", "cabedelo", "itajai", "aratu", "vitoria"]);
+export const nomeDaPraca = (cidade) => (PORTOS.has(norm(cidade)) ? `${cidade} (CIF Porto)` : cidade);
+
+/** No máximo K praças de interior por produto/UF/dia: as que casam com praças das outras fontes primeiro (continuidade), depois ordem de nome (estável). Portos entram à parte (até 2). */
+export const MAX_PRACAS_POR_UF = 10;
+export function escolherPracas(pracas, outras, k = MAX_PRACAS_POR_UF) {
+  const conhecidas = new Set();
+  for (const o of outras ?? []) for (const parte of partesDaPraca(o.regiao)) conhecidas.add(parte);
+  const interior = pracas.filter((x) => !PORTOS.has(norm(x.cidade)));
+  const portos = pracas.filter((x) => PORTOS.has(norm(x.cidade))).slice(0, 2);
+  const ordenadas = [...interior].sort((a, b) => Number(conhecidas.has(norm(b.cidade))) - Number(conhecidas.has(norm(a.cidade))) || norm(a.cidade).localeCompare(norm(b.cidade)));
+  return [...ordenadas.slice(0, k), ...portos];
 }

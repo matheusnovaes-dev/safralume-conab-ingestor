@@ -1,7 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { chromium } from "playwright";
 import { writeFileSync } from "node:fs";
-import { compararComNossasFontes, norm } from "./coleta-b-regras.mjs";
+import { compararComNossasFontes, escolherPracas, nomeDaPraca, norm } from "./coleta-b-regras.mjs";
 
 /**
  * Fonte B (cotações do mercado físico, preço ao produtor por praça): TODOS os produtos, uma vez por dia, navegando como uma pessoa.
@@ -313,8 +313,9 @@ async function main() {
       else if (decisao.decisao === "sem_como_comparar") pulados.semComoComparar += pracas.length;
       else if (decisao.decisao === "ja_tem_outra_variante") pulados.jaTemosOutraVariante += pracas.length;
       else {
-        for (const x of pracas) linhas.push({ produto: m.produto, uf, regiao: x.cidade, nivel_comercializacao: "PRODUTOR", preco: x.preco, unidade: m.unidade, data_referencia: x.data, fonte: FONTE });
-        porUf[uf] = (porUf[uf] ?? 0) + pracas.length;
+        const escolhidas = escolherPracas(pracas, m.unificado ? (outrasPorProdutoUf.get(`${m.produto}|${uf}`) ?? []) : (outrasPorUf.get(uf) ?? []));
+        for (const x of escolhidas) linhas.push({ produto: m.produto, uf, regiao: nomeDaPraca(x.cidade), nivel_comercializacao: "PRODUTOR", preco: x.preco, unidade: m.unidade, data_referencia: x.data, fonte: FONTE });
+        porUf[uf] = (porUf[uf] ?? 0) + escolhidas.length;
       }
     }
   }
