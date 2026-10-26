@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { chromium } from "playwright";
 import { writeFileSync } from "node:fs";
+import { compararComNossasFontes, norm } from "./coleta-b-regras.mjs";
 
 /**
  * Fonte B (cotações do mercado físico, preço ao produtor por praça): TODOS os produtos, uma vez por dia, navegando como uma pessoa.
@@ -23,6 +24,8 @@ const SEM_BANCO = !SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY || process.env.DRY
 const SO_LER = process.env.FONTE_B_SO_LER === "1" || SEM_BANCO;
 const supabase = SEM_BANCO ? null : createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 const LIMITE = Number(process.env.FONTE_B_LIMITE ?? 0);
+// UFs em que o Fonte B é a fonte principal MESMO divergindo da fonte atual (decisão do Matheus; ex.: "PR,RS"). Vazio = só onde concorda ou não há dado.
+const UFS_FORCADAS = new Set((process.env.FONTE_B_UFS_FORCADAS ?? "").split(",").map((x) => x.trim().toUpperCase()).filter(Boolean));
 
 const FONTE = "Fonte B";
 const BASE = "https://www.coleta-b.com.br";
@@ -187,7 +190,7 @@ const UNIDADES = [
 ];
 function mapearProduto(nome) {
   const nosso = NOME_NOSSO[nome.trim().toLowerCase()];
-  if (nosso) return { produto: nosso[0], unidade: nosso[1] };
+  if (nosso) return { produto: nosso[0], unidade: nosso[1], unificado: true };
   let unidade = "unidade";
   for (const [re, f] of UNIDADES) {
     const m = re.exec(nome.trim());
@@ -196,27 +199,25 @@ function mapearProduto(nome) {
       break;
     }
   }
-  return { produto: `${nome.trim().toUpperCase()} (${FONTE})`, unidade };
+  return { produto: `${nome.trim().toUpperCase()} (${FONTE})`, unidade, unificado: false };
 }
 /** Palavra que identifica a cultura do produto, para saber se já temos algo dela naquele estado. */
 const chaveDaCultura = (nome) => semAcento(nome).toLowerCase().split(/[\s,/]+/).filter((w) => w.length > 2 && !["sc", "cx", "em", "de", "do", "da", "tipo"].includes(w))[0] ?? "";
+const semAcentoMinusculo = (t) => norm(t);
 const dia = (n) => new Date(n * 86_400_000).toISOString().slice(0, 10);
 
-async function carregarCobertura() {
-  // produto (normalizado) por UF das OUTRAS fontes, últimos 14 dias
+async function carregarOutrasFontes() {
+  // linhas das OUTRAS fontes nos últimos 14 dias: base da comparação e da regra "só onde não temos dado"
   const desde = new Date(Date.now() - DIAS_DO_DADO_NOSSO * 86_400_000).toISOString().slice(0, 10);
-  const por = new Map();
-  for (let off = 0; off < 40_000; off += 1000) {
-    const { data, error } = await supabase.from("precos").select("uf, produto, fonte").gte("data_referencia", desde).neq("fonte", FONTE).range(off, off + 999);
-    if (error) throw new Error(`erro lendo a cobertura: ${error.message}`);
+  const linhas = [];
+  for (let off = 0; off < 60_000; off += 1000) {
+    const { data, error } = await supabase.from("precos").select("uf, produto, regiao, preco, data_referencia, fonte").gte("data_referencia", desde).neq("fonte", FONTE).range(off, off + 999);
+    if (error) throw new Error(`erro lendo as outras fontes: ${error.message}`);
     if (!data?.length) break;
-    for (const x of data) {
-      if (!por.has(x.uf)) por.set(x.uf, new Set());
-      por.get(x.uf).add(semAcento(x.produto).toLowerCase());
-    }
+    linhas.push(...data);
     if (data.length < 1000) break;
   }
-  return por;
+  return linhas;
 }
 
 async function main() {
@@ -266,13 +267,24 @@ async function main() {
   }
 
   // ---- gravação ----
-  const cobertura = SEM_BANCO ? new Map() : await carregarCobertura();
+  const outras = SEM_BANCO ? [] : await carregarOutrasFontes();
+  const outrasPorProdutoUf = new Map();
+  const outrasPorUf = new Map();
+  for (const o of outras) {
+    const k = `${o.produto}|${o.uf}`;
+    if (!outrasPorProdutoUf.has(k)) outrasPorProdutoUf.set(k, []);
+    outrasPorProdutoUf.get(k).push(o);
+    if (!outrasPorUf.has(o.uf)) outrasPorUf.set(o.uf, []);
+    outrasPorUf.get(o.uf).push(o);
+  }
   const linhas = [];
-  const pulados = { jaTemosDado: 0, velha: 0, invalida: 0 };
+  const pulados = { velha: 0, invalida: 0, divergeDaFonteAtual: 0, semComoComparar: 0, jaTemosOutraVariante: 0 };
   const porUf = {};
+  const decisoes = [];
   for (const r of coletados) {
-    const { produto, unidade } = mapearProduto(r.nome);
+    const m = mapearProduto(r.nome);
     const chave = chaveDaCultura(r.nome);
+    const porUfDoProduto = new Map();
     for (const x of r.pracas ?? []) {
       if (!x.uf || !x.cidade || !Number.isFinite(x.preco) || x.preco <= 0) {
         pulados.invalida++;
@@ -283,12 +295,27 @@ async function main() {
         pulados.velha++;
         continue;
       }
-      if (cobertura.get(x.uf)?.size && [...cobertura.get(x.uf)].some((s) => s.includes(chave))) {
-        pulados.jaTemosDado++;
-        continue;
+      if (!porUfDoProduto.has(x.uf)) porUfDoProduto.set(x.uf, []);
+      porUfDoProduto.get(x.uf).push({ cidade: x.cidade, preco: x.preco, data });
+    }
+    for (const [uf, pracas] of porUfDoProduto) {
+      let decisao;
+      if (m.unificado) {
+        decisao = compararComNossasFontes(pracas, outrasPorProdutoUf.get(`${m.produto}|${uf}`) ?? []);
+      } else {
+        // variante só do Fonte B: grava se não houver nada parecido (mesma cultura) de outra fonte naquela UF
+        const parecido = (outrasPorUf.get(uf) ?? []).some((o) => semAcentoMinusculo(o.produto).includes(chave));
+        decisao = { decisao: parecido ? "ja_tem_outra_variante" : "lacuna", pares: 0, mediaPct: null, absPct: null };
       }
-      linhas.push({ produto, uf: x.uf, regiao: x.cidade, nivel_comercializacao: "PRODUTOR", preco: x.preco, unidade, data_referencia: data, fonte: FONTE });
-      porUf[x.uf] = (porUf[x.uf] ?? 0) + 1;
+      decisoes.push({ produto: m.produto, uf, praças: pracas.length, ...decisao });
+      if (UFS_FORCADAS.has(uf) && (decisao.decisao === "diverge" || decisao.decisao === "sem_como_comparar")) decisao = { ...decisao, decisao: "forcada" };
+      if (decisao.decisao === "diverge") pulados.divergeDaFonteAtual += pracas.length;
+      else if (decisao.decisao === "sem_como_comparar") pulados.semComoComparar += pracas.length;
+      else if (decisao.decisao === "ja_tem_outra_variante") pulados.jaTemosOutraVariante += pracas.length;
+      else {
+        for (const x of pracas) linhas.push({ produto: m.produto, uf, regiao: x.cidade, nivel_comercializacao: "PRODUTOR", preco: x.preco, unidade: m.unidade, data_referencia: x.data, fonte: FONTE });
+        porUf[uf] = (porUf[uf] ?? 0) + pracas.length;
+      }
     }
   }
   const unicas = [...new Map(linhas.map((l) => [`${l.produto}|${l.uf}|${l.regiao}|${l.data_referencia}`, l])).values()];
@@ -300,6 +327,7 @@ async function main() {
     linhasParaGravar: unicas.length,
     pulados,
     gravandoPorUf: porUf,
+    decisoes: decisoes.filter((d) => d.produto.includes("(60 kg)") || d.produto.includes("(15 kg)")).map((d) => `${d.produto} ${d.uf}: ${d.decisao}${d.mediaPct != null ? ` (média ${d.mediaPct}%, abs ${d.absPct}%, ${d.pares} praças em comum)` : ""}`),
     bloqueio: bloqueio?.message ?? null,
     minutos: Math.round((Date.now() - inicio) / 60_000),
   };
