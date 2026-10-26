@@ -304,7 +304,7 @@ async function publicarSonda(dados) {
 }
 
 /** Endereço, rotas e rótulo da fonte: bucket privado `coleta-b` (ou COLETA_B_CONFIG no teste local). Nada disso fica no código do repositório. */
-async function carregarConfig() {
+export async function carregarConfig() {
   let cfg = null;
   if (process.env.COLETA_B_CONFIG) cfg = JSON.parse(process.env.COLETA_B_CONFIG);
   else if (supabase) {
