@@ -211,7 +211,7 @@ const chaveDaCultura = (nome) => semAcento(corrigirGrafia(nome)).toLowerCase().s
 const semAcentoMinusculo = (t) => norm(t);
 const dia = (n) => new Date(n * 86_400_000).toISOString().slice(0, 10);
 
-async function carregarOutrasFontes() {
+export async function carregarOutrasFontes() {
   // linhas das OUTRAS fontes nos últimos 14 dias: base da comparação e da regra "só onde não temos dado"
   const desde = new Date(Date.now() - DIAS_DO_DADO_NOSSO * 86_400_000).toISOString().slice(0, 10);
   const linhas = [];
@@ -225,74 +225,7 @@ async function carregarOutrasFontes() {
   return linhas;
 }
 
-async function publicarSonda(dados) {
-  if (!supabase) return;
-  const corpo = Buffer.from(JSON.stringify({ quando: new Date().toISOString(), ...dados }));
-  const { error } = await supabase.storage.from("marketing-temp").upload("coleta-b/sonda.json", corpo, { upsert: true, contentType: "application/json" });
-  if (error) console.log(`Aviso: sonda não enviada ao storage (${error.message}).`);
-}
-
-async function main() {
-  const inicio = Date.now();
-  if (process.env.COLETA_SEM_ATRASO !== "1" && !LIMITE && process.env.GITHUB_EVENT_NAME === "schedule") await esperar(entre(0, 15 * 60_000)); // hora de chegada de pessoa, não de relógio
-  let navegador, ctx, p;
-  const abrir = async () => {
-    await navegador?.close().catch(() => {});
-    navegador = await chromium.launch();
-    ctx = await navegador.newContext({ userAgent: UA, locale: "pt-BR", timezoneId: "America/Sao_Paulo", viewport: { width: 1366 + Math.floor(Math.random() * 400), height: 800 + Math.floor(Math.random() * 200) } });
-    p = await ctx.newPage();
-  };
-  await abrir();
-  const coletados = [];
-  let bloqueio = null;
-  try {
-    const todos = await listarProdutos(p);
-    console.log(`Fonte B: ${todos.length} produtos no catálogo.`);
-    let fila = embaralhar(todos);
-    if (LIMITE) fila = fila.slice(0, LIMITE);
-    let n = 0;
-    const inicioDaSonda = Date.now();
-    let sondaPublicada = false;
-    for (const produto of fila) {
-      ritmoRapido = n < SONDA_PRODUTOS;
-      await pausa(3000, 8000);
-      if (!ritmoRapido && ++n % 12 === 0) await pausa(15_000, 40_000); // "pausa para o café"
-      else if (ritmoRapido) n++;
-      let r;
-      for (let tentativa = 1; tentativa <= 2 && !r; tentativa++) {
-        try {
-          r = await coletarProduto(p, produto);
-        } catch (e) {
-          if (e instanceof BloqueioDetectado) throw e;
-          const caiu = /closed|crash|Target page|browser has been/i.test(String(e.message));
-          if (caiu && tentativa === 1) {
-            await abrir(); // o navegador caiu: abre outro e repete este produto uma vez
-            continue;
-          }
-          r = { ...produto, slug: slugDe(produto.nome), erro: `falha: ${String(e.message).split("\n")[0].slice(0, 90)}`, pracas: [] };
-        }
-      }
-      coletados.push(r);
-      console.log(`  [${n}/${fila.length}] ${produto.nome}: ${r.erro ? `ERRO ${r.erro}` : `${r.pracas.length}/${r.total} praças${r.ok ? "" : " (INCOMPLETO)"}`}`);
-      if (!sondaPublicada && (n >= SONDA_PRODUTOS || n >= fila.length)) {
-        sondaPublicada = true;
-        const segundos = Math.round((Date.now() - inicioDaSonda) / 1000);
-        const comErro = coletados.filter((x) => x.erro).length;
-        console.log(`SONDA OK: ${coletados.length} produtos em ${segundos}s sem bloqueio (${comErro} com erro de leitura).`);
-        await publicarSonda({ ok: true, produtos: coletados.length, segundos, comErro, ip: process.env.GITHUB_ACTIONS ? "GitHub Actions" : "local" });
-      }
-    }
-  } catch (e) {
-    if (e instanceof BloqueioDetectado) {
-      bloqueio = e;
-      await publicarSonda({ ok: false, motivo: e.message, produtosAntes: coletados.length, ip: process.env.GITHUB_ACTIONS ? "GitHub Actions" : "local" });
-    } else throw e;
-  } finally {
-    await navegador?.close().catch(() => {});
-  }
-
-  // ---- gravação ----
-  const outras = SEM_BANCO ? [] : await carregarOutrasFontes();
+export function indexarOutras(outras) {
   const outrasPorProdutoUf = new Map();
   const outrasPorUf = new Map();
   for (const o of outras) {
@@ -302,6 +235,11 @@ async function main() {
     if (!outrasPorUf.has(o.uf)) outrasPorUf.set(o.uf, []);
     outrasPorUf.get(o.uf).push(o);
   }
+  return { outrasPorProdutoUf, outrasPorUf };
+}
+
+/** Decide o que gravar de um lote de produtos já lidos (regras em coleta-b-regras.mjs). */
+export function planejarGravacao(coletados, { outrasPorProdutoUf, outrasPorUf }) {
   const linhas = [];
   const pulados = { velha: 0, invalida: 0, divergeDaFonteAtual: 0, semComoComparar: 0, jaTemosOutraVariante: 0 };
   const porUf = {};
@@ -343,22 +281,117 @@ async function main() {
       else if (decisao.decisao === "sem_como_comparar") pulados.semComoComparar += pracas.length;
       else if (decisao.decisao === "ja_tem_outra_variante") pulados.jaTemosOutraVariante += pracas.length;
       else {
-        const escolhidas = escolherPracas(pracas, m.unificado ? (outrasPorProdutoUf.get(`${m.produto}|${uf}`) ?? []) : (outrasPorUf.get(uf) ?? []));
+        // UF sem dado nosso (lacuna): até 25 praças (não há consulta existente para esmagar); onde já temos fonte, 10 para não pesar nas consultas
+        const escolhidas = escolherPracas(pracas, m.unificado ? (outrasPorProdutoUf.get(`${m.produto}|${uf}`) ?? []) : (outrasPorUf.get(uf) ?? []), decisao.decisao === "lacuna" ? 25 : undefined);
         for (const x of escolhidas) linhas.push({ produto: m.produto, uf, regiao: nomeDaPraca(x.cidade), nivel_comercializacao: "PRODUTOR", preco: x.preco, unidade: m.unidade, data_referencia: x.data, fonte: FONTE });
         porUf[uf] = (porUf[uf] ?? 0) + escolhidas.length;
       }
     }
   }
   const unicas = [...new Map(linhas.map((l) => [`${l.produto}|${l.uf}|${l.regiao}|${l.data_referencia}`, l])).values()];
+  return { unicas, pulados, porUf, decisoes };
+}
+
+async function publicarSonda(dados) {
+  if (!supabase) return;
+  const corpo = Buffer.from(JSON.stringify({ quando: new Date().toISOString(), ...dados }));
+  const { error } = await supabase.storage.from("marketing-temp").upload("coleta-b/sonda.json", corpo, { upsert: true, contentType: "application/json" });
+  if (error) console.log(`Aviso: sonda não enviada ao storage (${error.message}).`);
+}
+
+async function main() {
+  const inicio = Date.now();
+  if (process.env.COLETA_SEM_ATRASO !== "1" && !LIMITE && process.env.GITHUB_EVENT_NAME === "schedule") await esperar(entre(0, 15 * 60_000)); // hora de chegada de pessoa, não de relógio
+  let navegador, ctx, p;
+  const abrir = async () => {
+    await navegador?.close().catch(() => {});
+    navegador = await chromium.launch();
+    ctx = await navegador.newContext({ userAgent: UA, locale: "pt-BR", timezoneId: "America/Sao_Paulo", viewport: { width: 1366 + Math.floor(Math.random() * 400), height: 800 + Math.floor(Math.random() * 200) } });
+    p = await ctx.newPage();
+  };
+  await abrir();
+  const coletados = [];
+  let bloqueio = null;
+  // Gravação em lotes de 20 produtos: se o job for cortado (limite de tempo, queda), o que já foi lido e gravado fica.
+  const indice = indexarOutras(SEM_BANCO ? [] : await carregarOutrasFontes());
+  const totalPulados = {};
+  const totalPorUf = {};
+  const todasDecisoes = [];
+  let totalGravadas = 0;
+  const lote = [];
+  const gravarLote = async () => {
+    if (lote.length === 0) return;
+    const plano = planejarGravacao(lote.splice(0), indice);
+    for (const [k, v] of Object.entries(plano.pulados)) totalPulados[k] = (totalPulados[k] ?? 0) + v;
+    for (const [k, v] of Object.entries(plano.porUf)) totalPorUf[k] = (totalPorUf[k] ?? 0) + v;
+    todasDecisoes.push(...plano.decisoes);
+    if (SO_LER || plano.unicas.length === 0) return;
+    for (let i = 0; i < plano.unicas.length; i += 500) {
+      const { error } = await supabase.from("precos").upsert(plano.unicas.slice(i, i + 500), { onConflict: "produto,uf,regiao,data_referencia", ignoreDuplicates: true });
+      if (error) throw new Error(`erro gravando: ${error.message}`);
+    }
+    totalGravadas += plano.unicas.length;
+    console.log(`  gravadas ${plano.unicas.length} linhas deste lote (total ${totalGravadas}; existentes não são sobrescritas).`);
+  };
+  try {
+    const todos = await listarProdutos(p);
+    console.log(`Fonte B: ${todos.length} produtos no catálogo.`);
+    let fila = embaralhar(todos);
+    if (LIMITE) fila = fila.slice(0, LIMITE);
+    let n = 0;
+    const inicioDaSonda = Date.now();
+    let sondaPublicada = false;
+    for (const produto of fila) {
+      ritmoRapido = n < SONDA_PRODUTOS;
+      await pausa(3000, 8000);
+      if (!ritmoRapido && ++n % 12 === 0) await pausa(15_000, 40_000); // "pausa para o café"
+      else if (ritmoRapido) n++;
+      let r;
+      for (let tentativa = 1; tentativa <= 2 && !r; tentativa++) {
+        try {
+          r = await coletarProduto(p, produto);
+        } catch (e) {
+          if (e instanceof BloqueioDetectado) throw e;
+          const caiu = /closed|crash|Target page|browser has been/i.test(String(e.message));
+          if (caiu && tentativa === 1) {
+            await abrir(); // o navegador caiu: abre outro e repete este produto uma vez
+            continue;
+          }
+          r = { ...produto, slug: slugDe(produto.nome), erro: `falha: ${String(e.message).split("\n")[0].slice(0, 90)}`, pracas: [] };
+        }
+      }
+      coletados.push(r);
+      lote.push(r);
+      if (lote.length >= 20) await gravarLote();
+      console.log(`  [${n}/${fila.length}] ${produto.nome}: ${r.erro ? `ERRO ${r.erro}` : `${r.pracas.length}/${r.total} praças${r.ok ? "" : " (INCOMPLETO)"}`}`);
+      if (!sondaPublicada && (n >= SONDA_PRODUTOS || n >= fila.length)) {
+        sondaPublicada = true;
+        const segundos = Math.round((Date.now() - inicioDaSonda) / 1000);
+        const comErro = coletados.filter((x) => x.erro).length;
+        console.log(`SONDA OK: ${coletados.length} produtos em ${segundos}s sem bloqueio (${comErro} com erro de leitura).`);
+        await publicarSonda({ ok: true, produtos: coletados.length, segundos, comErro, ip: process.env.GITHUB_ACTIONS ? "GitHub Actions" : "local" });
+      }
+    }
+  } catch (e) {
+    if (e instanceof BloqueioDetectado) {
+      bloqueio = e;
+      await publicarSonda({ ok: false, motivo: e.message, produtosAntes: coletados.length, ip: process.env.GITHUB_ACTIONS ? "GitHub Actions" : "local" });
+    } else throw e;
+  } finally {
+    await navegador?.close().catch(() => {});
+  }
+  await gravarLote(); // o que sobrou do último lote (também se houve bloqueio)
+
   const resumo = {
     produtos: coletados.length,
     produtosComErro: coletados.filter((r) => r.erro).map((r) => `${r.nome}: ${r.erro}`),
     produtosIncompletos: coletados.filter((r) => !r.erro && !r.ok).map((r) => `${r.nome}: ${r.pracas.length}/${r.total}`),
     pracasLidas: coletados.reduce((a, r) => a + (r.pracas?.length ?? 0), 0),
-    linhasParaGravar: unicas.length,
-    pulados,
-    gravandoPorUf: porUf,
-    decisoes: decisoes.filter((d) => d.produto.includes("(60 kg)") || d.produto.includes("(15 kg)")).map((d) => `${d.produto} ${d.uf}: ${d.decisao}${d.mediaPct != null ? ` (média ${d.mediaPct}%, abs ${d.absPct}%, ${d.pares} praças em comum)` : ""}`),
+    linhasGravadas: totalGravadas,
+    pulados: totalPulados,
+    gravandoPorUf: totalPorUf,
+    decisoes: todasDecisoes.filter((d) => d.produto.includes("(60 kg)") || d.produto.includes("(15 kg)")).map((d) => `${d.produto} ${d.uf}: ${d.decisao}${d.mediaPct != null ? ` (média ${d.mediaPct}%, abs ${d.absPct}%, ${d.pares} praças em comum)` : ""}`),
+    todasAsDecisoes: todasDecisoes.map((d) => `${d.produto} ${d.uf}: ${d.decisao}`),
     bloqueio: bloqueio?.message ?? null,
     minutos: Math.round((Date.now() - inicio) / 60_000),
   };
@@ -371,13 +404,7 @@ async function main() {
     if (error) console.log(`Aviso: snapshot não enviado ao storage (${error.message}).`);
   }
 
-  if (!SO_LER) {
-    for (let i = 0; i < unicas.length; i += 500) {
-      const { error } = await supabase.from("precos").upsert(unicas.slice(i, i + 500), { onConflict: "produto,uf,regiao,data_referencia", ignoreDuplicates: true });
-      if (error) throw new Error(`erro gravando: ${error.message}`);
-    }
-    console.log(`Gravadas até ${unicas.length} linhas (existentes não são sobrescritas).`);
-  } else console.log("Modo só leitura: nada foi gravado.");
+  if (SO_LER) console.log("Modo só leitura: nada foi gravado.");
   if (bloqueio) {
     console.error(bloqueio.message);
     process.exit(2);
