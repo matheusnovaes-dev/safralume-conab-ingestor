@@ -222,9 +222,14 @@ async function carregarCobertura() {
 async function main() {
   const inicio = Date.now();
   if (process.env.COLETA_SEM_ATRASO !== "1" && !LIMITE && process.env.GITHUB_ACTIONS) await esperar(entre(0, 15 * 60_000)); // hora de chegada de pessoa, não de relógio
-  const navegador = await chromium.launch();
-  const ctx = await navegador.newContext({ userAgent: UA, locale: "pt-BR", timezoneId: "America/Sao_Paulo", viewport: { width: 1366 + Math.floor(Math.random() * 400), height: 800 + Math.floor(Math.random() * 200) } });
-  const p = await ctx.newPage();
+  let navegador, ctx, p;
+  const abrir = async () => {
+    await navegador?.close().catch(() => {});
+    navegador = await chromium.launch();
+    ctx = await navegador.newContext({ userAgent: UA, locale: "pt-BR", timezoneId: "America/Sao_Paulo", viewport: { width: 1366 + Math.floor(Math.random() * 400), height: 800 + Math.floor(Math.random() * 200) } });
+    p = await ctx.newPage();
+  };
+  await abrir();
   const coletados = [];
   let bloqueio = null;
   try {
@@ -237,11 +242,18 @@ async function main() {
       await pausa(3000, 8000);
       if (++n % 12 === 0) await pausa(15_000, 40_000); // "pausa para o café"
       let r;
-      try {
-        r = await coletarProduto(p, produto);
-      } catch (e) {
-        if (e instanceof BloqueioDetectado) throw e;
-        r = { ...produto, slug: slugDe(produto.nome), erro: `falha: ${String(e.message).split("\n")[0].slice(0, 90)}`, pracas: [] };
+      for (let tentativa = 1; tentativa <= 2 && !r; tentativa++) {
+        try {
+          r = await coletarProduto(p, produto);
+        } catch (e) {
+          if (e instanceof BloqueioDetectado) throw e;
+          const caiu = /closed|crash|Target page|browser has been/i.test(String(e.message));
+          if (caiu && tentativa === 1) {
+            await abrir(); // o navegador caiu: abre outro e repete este produto uma vez
+            continue;
+          }
+          r = { ...produto, slug: slugDe(produto.nome), erro: `falha: ${String(e.message).split("\n")[0].slice(0, 90)}`, pracas: [] };
+        }
       }
       coletados.push(r);
       console.log(`  [${n}/${fila.length}] ${produto.nome}: ${r.erro ? `ERRO ${r.erro}` : `${r.pracas.length}/${r.total} praças${r.ok ? "" : " (INCOMPLETO)"}`}`);
@@ -250,7 +262,7 @@ async function main() {
     if (e instanceof BloqueioDetectado) bloqueio = e;
     else throw e;
   } finally {
-    await navegador.close();
+    await navegador?.close().catch(() => {});
   }
 
   // ---- gravação ----
