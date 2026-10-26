@@ -1,1 +1,1 @@
-disparo 1: 2026-10-26 (sonda rápida de bloqueio + coleta)
+disparo 2: 2026-10-26 (código novo: grava em lotes de 20 produtos)
