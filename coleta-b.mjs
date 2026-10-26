@@ -189,6 +189,8 @@ const NOME_NOSSO = {
 const UNIDADES = [
   [/sc\s*(\d+(?:[.,]\d+)?)\s*kg/i, (m) => `${m[1]} kg`],
   [/cx\s*(\d+(?:[.,]\d+)?)\s*kg/i, (m) => `cx ${m[1]} kg`],
+  [/cx\s*(\d+)\s*dz$/i, (m) => `cx ${m[1]} dz`],
+  [/1\s*dz$/i, () => "dz"],
   [/kg\/vivo\s*1\s*kg/i, () => "kg vivo"],
   [/(\d+(?:[.,]\d+)?)\s*kg$/i, (m) => (m[1] === "1" ? "kg" : `${m[1]} kg`)],
   [/1\s*ton$/i, () => "ton"],
