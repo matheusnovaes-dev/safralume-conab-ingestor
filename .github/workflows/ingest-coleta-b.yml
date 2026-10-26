@@ -6,9 +6,11 @@ on:
     # chegar, para o horário de acesso variar como o de uma pessoa. Minuto 20 pelo mesmo motivo dos outros
     # agendamentos: o Actions atrasa a hora cheia.
     - cron: "20 9 * * *"
-    # ENSAIO ÚNICO de hoje (remover depois): primeira execução no GitHub, só leitura
-    - cron: "35 18 * * *"
   workflow_dispatch: {}
+  # Disparo manual por push: alterar o arquivo marcador abaixo inicia a execução (o agendamento do GitHub atrasa ou descarta workflows novos).
+  push:
+    paths:
+      - ".github/coleta-b-disparo.txt"
 
 jobs:
   ingest:
@@ -26,8 +28,8 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          # SÓ LEITURA até validar o primeiro ensaio completo (nada é gravado). Trocar para "0" para ligar a gravação.
-          FONTE_B_SO_LER: "1"
+          # Grava só onde concorda com a fonte atual ou onde não há dado (ver coleta-b-regras.mjs). "1" = só leitura.
+          FONTE_B_SO_LER: "0"
         run: bun run ingest-coleta-b.mjs
       - name: Upload run snapshot
         if: always()

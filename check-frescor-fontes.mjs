@@ -31,6 +31,8 @@ const FONTES = [
   { fonte: "Imea", maxDiasRef: 14 },
   { fonte: "EPAGRI/CEPA-SC", maxDiasRef: 50 },
   { fonte: "Conseleite-MG (projeção)", maxDiasRef: 60 },
+  // Fonte B (todos os produtos, 1x por dia, só onde concorda com a fonte atual ou não há dado): autorizado por escrito em 2026-10-26.
+  { fonte: "Fonte B", maxDiasRef: 5, maxHorasGravacao: 72 },
 ];
 
 const DIA = 86_400_000;

@@ -42,9 +42,13 @@ class BloqueioDetectado extends Error {
 }
 
 // ---- ritmo de pessoa ----
+// Sonda de bloqueio: os primeiros SONDA_PRODUTOS produtos saem num ritmo mais curto (ainda de pessoa que passa rápido), para saber em poucos minutos
+// se o IP do GitHub é bloqueado. Para no primeiro sinal de bloqueio (401/403/429/captcha). Depois segue no ritmo humano normal.
+const SONDA_PRODUTOS = Number(process.env.FONTE_B_SONDA ?? 12);
+let ritmoRapido = false;
 const esperar = (ms) => new Promise((r) => setTimeout(r, ms));
 const entre = (a, b) => a + Math.random() * (b - a);
-const pausa = (a = 2500, b = 6500) => esperar(entre(a, b));
+const pausa = (a = 2500, b = 6500) => (ritmoRapido ? esperar(entre(a * 0.4, b * 0.4)) : esperar(entre(a, b)));
 const embaralhar = (xs) => xs.map((x) => [Math.random(), x]).sort((a, b) => a[0] - b[0]).map((p) => p[1]);
 
 async function gestoDeLeitura(p) {
@@ -220,6 +224,13 @@ async function carregarOutrasFontes() {
   return linhas;
 }
 
+async function publicarSonda(dados) {
+  if (!supabase) return;
+  const corpo = Buffer.from(JSON.stringify({ quando: new Date().toISOString(), ...dados }));
+  const { error } = await supabase.storage.from("marketing-temp").upload("coleta-b/sonda.json", corpo, { upsert: true, contentType: "application/json" });
+  if (error) console.log(`Aviso: sonda não enviada ao storage (${error.message}).`);
+}
+
 async function main() {
   const inicio = Date.now();
   if (process.env.COLETA_SEM_ATRASO !== "1" && !LIMITE && process.env.GITHUB_ACTIONS) await esperar(entre(0, 15 * 60_000)); // hora de chegada de pessoa, não de relógio
@@ -239,9 +250,13 @@ async function main() {
     let fila = embaralhar(todos);
     if (LIMITE) fila = fila.slice(0, LIMITE);
     let n = 0;
+    const inicioDaSonda = Date.now();
+    let sondaPublicada = false;
     for (const produto of fila) {
+      ritmoRapido = n < SONDA_PRODUTOS;
       await pausa(3000, 8000);
-      if (++n % 12 === 0) await pausa(15_000, 40_000); // "pausa para o café"
+      if (!ritmoRapido && ++n % 12 === 0) await pausa(15_000, 40_000); // "pausa para o café"
+      else if (ritmoRapido) n++;
       let r;
       for (let tentativa = 1; tentativa <= 2 && !r; tentativa++) {
         try {
@@ -258,10 +273,19 @@ async function main() {
       }
       coletados.push(r);
       console.log(`  [${n}/${fila.length}] ${produto.nome}: ${r.erro ? `ERRO ${r.erro}` : `${r.pracas.length}/${r.total} praças${r.ok ? "" : " (INCOMPLETO)"}`}`);
+      if (!sondaPublicada && (n >= SONDA_PRODUTOS || n >= fila.length)) {
+        sondaPublicada = true;
+        const segundos = Math.round((Date.now() - inicioDaSonda) / 1000);
+        const comErro = coletados.filter((x) => x.erro).length;
+        console.log(`SONDA OK: ${coletados.length} produtos em ${segundos}s sem bloqueio (${comErro} com erro de leitura).`);
+        await publicarSonda({ ok: true, produtos: coletados.length, segundos, comErro, ip: process.env.GITHUB_ACTIONS ? "GitHub Actions" : "local" });
+      }
     }
   } catch (e) {
-    if (e instanceof BloqueioDetectado) bloqueio = e;
-    else throw e;
+    if (e instanceof BloqueioDetectado) {
+      bloqueio = e;
+      await publicarSonda({ ok: false, motivo: e.message, produtosAntes: coletados.length, ip: process.env.GITHUB_ACTIONS ? "GitHub Actions" : "local" });
+    } else throw e;
   } finally {
     await navegador?.close().catch(() => {});
   }
@@ -282,6 +306,12 @@ async function main() {
   const porUf = {};
   const decisoes = [];
   for (const r of coletados) {
+    // Preço de ATACADO (Ceasa, central de abastecimento) não é o que o produtor recebe: o app trata `precos` como preço ao produtor e o atacado
+    // tem tabela própria (precos_atacado). Produto de atacado do Fonte B fica de fora.
+    if (/atacado/i.test(r.nome)) {
+      pulados.atacado = (pulados.atacado ?? 0) + (r.pracas?.length ?? 0);
+      continue;
+    }
     const m = mapearProduto(r.nome);
     const chave = chaveDaCultura(r.nome);
     const porUfDoProduto = new Map();
