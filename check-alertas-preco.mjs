@@ -1,6 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { pathToFileURL } from "node:url";
-import { buscarPrecoAtual } from "./preco-fonte.mjs";
+import { buscarPrecoAtual, carregarFontePrincipal } from "./preco-fonte.mjs";
 import { produtoresComAcesso, soComAcesso } from "./acesso-conta.mjs";
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -12,6 +12,7 @@ if (DRY_RUN) {
   console.log("SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY ausentes — rodando em modo dry-run.");
 }
 const supabase = DRY_RUN ? null : createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+if (supabase) await carregarFontePrincipal(supabase); // rótulo da fonte principal (configuração privada); vazio = regra desligada
 
 // Checador independente — antes disso, alerta de preço só era checado DENTRO
 // de ingest.mjs/ingest-deral-pr.mjs, amarrado ao batch daquele run

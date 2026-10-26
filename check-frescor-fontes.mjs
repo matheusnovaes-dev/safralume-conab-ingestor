@@ -31,9 +31,16 @@ const FONTES = [
   { fonte: "Imea", maxDiasRef: 14 },
   { fonte: "EPAGRI/CEPA-SC", maxDiasRef: 50 },
   { fonte: "Conseleite-MG (projeção)", maxDiasRef: 60 },
-  // Fonte B (todos os produtos, 1x por dia, só onde concorda com a fonte atual ou não há dado): autorizado por escrito em 2026-10-26.
-  { fonte: "Fonte B", maxDiasRef: 5, maxHorasGravacao: 72 },
 ];
+
+// Fonte da coleta B (1x por dia): o rótulo vem da configuração privada (bucket `coleta-b`).
+try {
+  const { data } = await supabase.storage.from("coleta-b").download("config/fonte-b.json");
+  const rotulo = JSON.parse(await data.text()).rotulo;
+  if (rotulo) FONTES.push({ fonte: rotulo, maxDiasRef: 5, maxHorasGravacao: 72 });
+} catch {
+  // sem configuração: não vigia essa fonte
+}
 
 const DIA = 86_400_000;
 const agora = Date.now();

@@ -1,11 +1,11 @@
 /**
- * Regras (puras, testáveis) para decidir se o Fonte B pode ser a fonte principal de um produto/UF.
+ * Regras (puras, testáveis) para decidir se a fonte B pode ser a fonte principal de um produto/UF.
  *
- * Princípio: o Fonte B só entra no banco como principal onde ele CONCORDA com a fonte que já usamos (mesma definição de preço, diferença
+ * Princípio: a fonte B só entra no banco como principal onde ele CONCORDA com a fonte que já usamos (mesma definição de preço, diferença
  * pequena nas praças em comum) ou onde não temos dado nenhum. Onde diverge (ex.: PR e RS, 5 a 7% abaixo da BBM na soja), a fonte atual fica
  * até o Matheus decidir qual definição vale: trocar de uma para outra de um dia para o outro faria o preço "pular" e quebraria o sinal de
- * venda, a variação e os alertas de preço dos clientes. Como as linhas do Fonte B são as mais novas (diárias), o app, que sempre usa a data
- * mais recente, passa a mostrá-las sozinho; se o Fonte B parar de atualizar, a data mais nova volta a ser a das outras fontes (reserva).
+ * venda, a variação e os alertas de preço dos clientes. Como as linhas da fonte B são as mais novas (diárias), o app, que sempre usa a data
+ * mais recente, passa a mostrá-las sozinho; se a fonte B parar de atualizar, a data mais nova volta a ser a das outras fontes (reserva).
  */
 export const semAcento = (s) => String(s ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "");
 export const norm = (s) => semAcento(s).toLowerCase().replace(/\(.*?\)/g, " ").replace(/[^a-z0-9/ ]+/g, " ").replace(/\s+/g, " ").trim();
@@ -23,23 +23,23 @@ export const LIMITES = {
   minimoDePares: 2, // praças em comum necessárias para comparar
   toleranciaDaMediaPct: 2.5, // |diferença média| máxima (praças em comum)
   toleranciaAbsolutaPct: 3.5, // diferença absoluta média máxima (praças em comum)
-  toleranciaDaMediaDaUfPct: 3.0, // comparação pela média da UF (preço oficial do estado, ou poucas praças em comum): margem de 3%. Boi em MT no 1º lote: Fonte B -3,7% do Datagro, ficou de fora
+  toleranciaDaMediaDaUfPct: 3.0, // comparação pela média da UF (preço oficial do estado, ou poucas praças em comum): margem de 3%. Boi em MT no 1º lote: a fonte B -3,7% do Datagro, ficou de fora
 };
 
 /**
- * @param coleta-b [{ cidade, preco }] praças do Fonte B do produto/UF (dia mais recente de cada uma)
+ * @param pracasB [{ cidade, preco }] praças da fonte B do produto/UF (dia mais recente de cada uma)
  * @param outras [{ regiao, preco, data_referencia }] linhas de OUTRAS fontes (mesmo produto/UF, últimos dias; a mais recente por praça)
  * @returns { decisao: "lacuna" | "concorda" | "diverge" | "sem_como_comparar", pares, mediaPct, absPct }
  */
-export function compararComNossasFontes(coleta-b, outras) {
+export function compararComNossasFontes(pracasB, outras) {
   const usaveis = (outras ?? []).filter((o) => !ehPracaCif(o.regiao) && Number.isFinite(o.preco) && o.preco > 0);
   if (usaveis.length === 0) return { decisao: "lacuna", pares: 0, mediaPct: null, absPct: null };
-  const mediaAg = coleta-b.reduce((x, y) => x + y.preco, 0) / coleta-b.length;
+  const mediaAg = pracasB.reduce((x, y) => x + y.preco, 0) / pracasB.length;
   const arred = (n) => Math.round(n * 10) / 10;
 
   // 1) O que o app SERVE hoje: o preço do estado (fonte oficial: DERAL, EMATER, Conab...) quando está em dia (menos de 7 dias atrás do
-  // regional); senão as praças. É contra ISSO que o Fonte B não pode "pular". Ex. real (26/10): soja no PR, DERAL R$ 132,86 (estado),
-  // Fonte B R$ 135,15, BBM R$ 145 em só 3 praças: o servido é o da DERAL, e o Fonte B está +1,7% dele.
+  // regional); senão as praças. É contra ISSO que a fonte B não pode "pular". Ex. real (26/10): soja no PR, DERAL R$ 132,86 (estado),
+  // a fonte B R$ 135,15, BBM R$ 145 em só 3 praças: o servido é o da DERAL, e a fonte B está +1,7% dele.
   const estado = usaveis.filter((o) => !o.regiao);
   const regionais = usaveis.filter((o) => o.regiao);
   const ultima = (xs) => xs.reduce((m, o) => (o.data_referencia > m ? o.data_referencia : m), "");
@@ -58,7 +58,7 @@ export function compararComNossasFontes(coleta-b, outras) {
     for (const parte of partesDaPraca(o.regiao)) ultimaPorParte.set(parte, o.preco);
   }
   const difs = [];
-  for (const a of coleta-b) {
+  for (const a of pracasB) {
     const ref = ultimaPorParte.get(norm(a.cidade));
     if (ref && Number.isFinite(a.preco)) difs.push(((a.preco - ref) / ref) * 100);
   }
@@ -80,7 +80,7 @@ export function compararComNossasFontes(coleta-b, outras) {
 }
 
 // ---- praças de porto e densidade ----
-/** Cidades-porto: o app só reconhece praça de porto pelo texto "CIF" no nome (convenção da BBM), então o Fonte B recebe o mesmo sufixo. */
+/** Cidades-porto: o app só reconhece praça de porto pelo texto "CIF" no nome (convenção da BBM), entãa fonte B recebe o mesmo sufixo. */
 const PORTOS = new Set(["paranagua", "rio grande", "santos", "sao francisco do sul", "itaqui", "sao luis", "barcarena", "santarem", "tubarao", "antonina", "imbituba", "cabedelo", "itajai", "aratu", "vitoria"]);
 export const nomeDaPraca = (cidade) => (PORTOS.has(norm(cidade)) ? `${cidade} (CIF Porto)` : cidade);
 
@@ -96,7 +96,7 @@ export function escolherPracas(pracas, outras, k = MAX_PRACAS_POR_UF) {
 }
 
 // ---- grafia e itens que não entram ----
-// O app acha o produto por texto COM acento (ilike '%maçã%', '%café%conillon%'); o Fonte B escreve alguns nomes sem acento ou de outro jeito.
+// O app acha o produto por texto COM acento (ilike '%maçã%', '%café%conillon%'); a fonte B escreve alguns nomes sem acento ou de outro jeito.
 const GRAFIA = [
   [/\bArabica\b/gi, "Arábica"], [/\bConilon\b/gi, "Conillon"], [/\bMaça\b/gi, "Maçã"], [/\bMaracuja\b/gi, "Maracujá"], [/\bAçucar\b/gi, "Açúcar"],
   [/\bPessego\b/gi, "Pêssego"], [/\bMelao\b/gi, "Melão"], [/\bAzevem\b/gi, "Azevém"], [/\bHavai\b/gi, "Havaí"], [/\bAlgodao\b/gi, "Algodão"],

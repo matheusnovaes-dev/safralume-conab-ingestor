@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import { escolherFonte, padraoDeProduto, ultimaDataRegional, normalizarCultura } from "./preco-fonte.mjs";
+import { escolherFonte, padraoDeProduto, ultimaDataRegional, normalizarCultura, carregarFontePrincipal } from "./preco-fonte.mjs";
 import { produtoresComAcesso, soComAcesso } from "./acesso-conta.mjs";
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -9,6 +9,7 @@ if (DRY_RUN) {
   console.log("SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY ausentes — rodando em modo dry-run.");
 }
 const supabase = DRY_RUN ? null : createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+if (supabase) await carregarFontePrincipal(supabase); // rótulo da fonte principal (configuração privada); vazio = regra desligada
 
 // Mesmo mapeamento de src/config/b3.ts — único lugar de verdade seria o app,
 // mas esse script roda fora do bundle dele, então é replicado aqui (mesma

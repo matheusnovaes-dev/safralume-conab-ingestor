@@ -1,4 +1,4 @@
-name: Ingest Fonte B (todos os produtos, 1x por dia)
+name: Coleta B (preços, 1x por dia)
 
 on:
   schedule:
@@ -12,9 +12,9 @@ on:
     paths:
       - ".github/coleta-b-disparo.txt"
 
-# Uma coleta por vez: nunca duas sessões ao mesmo tempo no Fonte B (uma nova espera a anterior terminar).
+# Uma coleta por vez: nunca duas sessões ao mesmo tempo no a fonte (uma nova espera a anterior terminar).
 concurrency:
-  group: coleta-b-coleta
+  group: coleta-b
   cancel-in-progress: false
 
 jobs:
@@ -34,8 +34,8 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           # Grava só onde concorda com a fonte atual ou onde não há dado (ver coleta-b-regras.mjs). "1" = só leitura.
-          FONTE_B_SO_LER: "0"
-        run: bun run ingest-coleta-b.mjs
+          COLETA_B_SO_LER: "0"
+        run: bun run coleta-b.mjs
       - name: Upload run snapshot
         if: always()
         uses: actions/upload-artifact@v4

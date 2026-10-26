@@ -13,8 +13,19 @@ export function diasEntre(a, b) {
   return Math.round((paraMs(b) - paraMs(a)) / MS_POR_DIA);
 }
 
-// Fonte B é a fonte principal por praça (coleta diária); as outras são a reserva pela data mais recente. Mesma regra do app (precoFonte.ts).
-export const FONTE_PRINCIPAL = "Fonte B";
+// Fonte principal por praça (coleta diária); as outras são a reserva pela data mais recente. Mesma regra do app (precoFonte.ts).
+// O rótulo vem da configuração privada (bucket `coleta-b`): quem usa este módulo chama carregarFontePrincipal(supabase) uma vez. Sem
+// configuração, fica vazio e a regra de fonte principal simplesmente não se aplica (comportamento anterior).
+export let FONTE_PRINCIPAL = "";
+export async function carregarFontePrincipal(supabase) {
+  try {
+    const { data } = await supabase.storage.from("coleta-b").download("config/fonte-b.json");
+    FONTE_PRINCIPAL = JSON.parse(await data.text()).rotulo ?? "";
+  } catch {
+    FONTE_PRINCIPAL = "";
+  }
+  return FONTE_PRINCIPAL;
+}
 export const DIAS_TOLERANCIA_PRINCIPAL = 2;
 
 export function escolherFonte(ultimaDoEstado, ultimaRegional, { regionalPrincipal = false } = {}) {
@@ -71,8 +82,8 @@ export async function ultimaDataRegional(supabase, cultura, uf) {
     .neq("regiao", "")
     // Praça CIF (porto/indústria) é outro nível de preço: fora do preço do interior.
     .not("regiao", "ilike", "%cif%")
-    // o aviso proativo de sinal de venda ainda NÃO usa o Fonte B (pouco histórico por estado): segue como antes, sem ele
-    .neq("fonte", FONTE_PRINCIPAL)
+    // o aviso proativo de sinal de venda ainda NÃO usa a fonte principal (pouco histórico por estado): segue como antes, sem ele
+    .neq("fonte", FONTE_PRINCIPAL || "__nenhuma__")
     .order("data_referencia", { ascending: false })
     .limit(1);
   return data?.[0]?.data_referencia ?? null;
@@ -106,14 +117,14 @@ export async function buscarPrecoAtual(supabase, cultura, uf) {
   ]);
   const linhaEstado = estado?.[0] ?? null;
   const ultimaRegional = regionais?.[0]?.data_referencia ?? null;
-  const regionalPrincipal = (regionais ?? []).some((r) => r.data_referencia === ultimaRegional && r.fonte === FONTE_PRINCIPAL);
+  const regionalPrincipal = !!FONTE_PRINCIPAL && (regionais ?? []).some((r) => r.data_referencia === ultimaRegional && r.fonte === FONTE_PRINCIPAL);
   const fonte = escolherFonte(linhaEstado?.data_referencia, ultimaRegional, { regionalPrincipal });
   if (fonte === "estado") {
     return { preco: Number(linhaEstado.preco), data_referencia: linhaEstado.data_referencia, produto: linhaEstado.produto, origem: "estado" };
   }
   if (fonte === "regional") {
     let doDia = regionais.filter((r) => r.data_referencia === ultimaRegional);
-    if (regionalPrincipal) doDia = doDia.filter((r) => r.fonte === FONTE_PRINCIPAL); // na mesma data, só o Fonte B (a praça não conta duas vezes)
+    if (regionalPrincipal) doDia = doDia.filter((r) => r.fonte === FONTE_PRINCIPAL); // na mesma data, só a fonte principal (a praça não conta duas vezes)
     const saca = doDia.filter((r) => String(r.unidade ?? "").includes("60"));
     const usadas = saca.length > 0 ? saca : doDia;
     return { preco: mediaDePracas(usadas.map((r) => Number(r.preco))), data_referencia: ultimaRegional, produto: usadas[0].produto, origem: `regional (média de ${usadas.length} praça(s))` };

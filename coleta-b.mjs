@@ -4,31 +4,35 @@ import { writeFileSync } from "node:fs";
 import { compararComNossasFontes, corrigirGrafia, ehProdutoIgnorado, escolherPracas, nomeDaPraca, norm } from "./coleta-b-regras.mjs";
 
 /**
- * Fonte B (cotações do mercado físico, preço ao produtor por praça): TODOS os produtos, uma vez por dia, navegando como uma pessoa.
+ * Coleta B (cotações do mercado físico, preço ao produtor por praça): todos os produtos, uma vez por dia, navegando como uma pessoa.
  *
- * Autorização: uso do Playwright na plataforma autorizado pelo Fonte B (documento guardado fora do repositório). Por isso: navegador Chromium
- * comum, ritmo e ordem de pessoa (pausas aleatórias, produtos embaralhados), e nenhum truque contra detecção. Se aparecer bloqueio (403/429,
- * captcha, "just a moment"), o script PARA com erro claro: nunca insiste nem contorna.
+ * Uso autorizado pela fonte (documento guardado fora do repositório). Endereço, rotas e rótulo da fonte vêm de uma configuração privada
+ * (bucket `coleta-b`, arquivo config/fonte-b.json; para teste local, a variável COLETA_B_CONFIG com o mesmo JSON): nada disso fica no código.
+ * Navegador Chromium comum, ritmo e ordem de pessoa (pausas aleatórias, produtos embaralhados), nenhum truque contra detecção. Se aparecer
+ * bloqueio (401/403/429, captcha), o script PARA com erro claro: nunca insiste nem contorna.
  *
- * Como o site entrega: a página de cada produto (/cotacoes/<slug>) traz as 20 primeiras praças no HTML; o botão "Carregar mais" busca as
- * próximas 20. Lemos o que o próprio navegador baixa (payload da página + respostas do botão), sem chamar endpoint por fora.
+ * Como a página entrega: cada produto traz as 20 primeiras praças no HTML; o botão "Carregar mais" busca as próximas 20. Lemos o que o
+ * próprio navegador baixa, sem chamar endpoint por fora.
  *
- * Regra de gravação ("complementar"): o Fonte B agrega as mesmas fontes que já temos (BBM, IEA-SP...) e em algumas praças difere 5 a 7%. Para
- * NÃO mudar nenhuma resposta que já funciona, só gravamos o produto/UF que HOJE não tem dado nosso (de outra fonte) nos últimos 14 dias.
- * Nunca sobrescreve linha existente (ignoreDuplicates). Variáveis: FONTE_B_LIMITE=N (só N produtos, para teste), FONTE_B_SO_LER=1
- * (não grava, só analisa), DRY=1 (idem, sem nem ler o banco).
+ * Regra de gravação ("complementar"): só entra onde concorda com a fonte atual (comparação em coleta-b-regras.mjs) ou onde não há dado nosso;
+ * nunca sobrescreve linha existente (ignoreDuplicates). Variáveis: COLETA_B_LIMITE=N (só N produtos), COLETA_B_SO_LER=1 (não grava),
+ * COLETA_B_SONDA=N (produtos da sonda rápida), COLETA_B_UFS_FORCADAS="PR,RS" (decisão do dono: entra mesmo divergindo), DRY=1.
  */
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const SEM_BANCO = !SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY || process.env.DRY === "1";
-const SO_LER = process.env.FONTE_B_SO_LER === "1" || SEM_BANCO;
+const SO_LER = process.env.COLETA_B_SO_LER === "1" || SEM_BANCO;
 const supabase = SEM_BANCO ? null : createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-const LIMITE = Number(process.env.FONTE_B_LIMITE ?? 0);
-// UFs em que o Fonte B é a fonte principal MESMO divergindo da fonte atual (decisão do Matheus; ex.: "PR,RS"). Vazio = só onde concorda ou não há dado.
-const UFS_FORCADAS = new Set((process.env.FONTE_B_UFS_FORCADAS ?? "").split(",").map((x) => x.trim().toUpperCase()).filter(Boolean));
+const LIMITE = Number(process.env.COLETA_B_LIMITE ?? 0);
+// UFs em que o a fonte é a fonte principal MESMO divergindo da fonte atual (decisão do Matheus; ex.: "PR,RS"). Vazio = só onde concorda ou não há dado.
+const UFS_FORCADAS = new Set((process.env.COLETA_B_UFS_FORCADAS ?? "").split(",").map((x) => x.trim().toUpperCase()).filter(Boolean));
 
-const FONTE = "Fonte B";
-const BASE = "https://www.coleta-b.com.br";
+// Rótulo, endereço e rotas da fonte: configuração privada (ver carregarConfig).
+let FONTE = "";
+let BASE = "";
+let ROTA_PRODUTO = "";
+let ROTA_API = "";
+let PAGINA_INICIAL = "";
 const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36";
 const DIAS_MAXIMOS_DE_ATRASO = 10; // praça com preço mais velho que isso não entra
 const DIAS_DO_DADO_NOSSO = 14; // "já temos dado" = linha de outra fonte nos últimos 14 dias
@@ -44,7 +48,7 @@ class BloqueioDetectado extends Error {
 // ---- ritmo de pessoa ----
 // Sonda de bloqueio: os primeiros SONDA_PRODUTOS produtos saem num ritmo mais curto (ainda de pessoa que passa rápido), para saber em poucos minutos
 // se o IP do GitHub é bloqueado. Para no primeiro sinal de bloqueio (401/403/429/captcha). Depois segue no ritmo humano normal.
-const SONDA_PRODUTOS = Number(process.env.FONTE_B_SONDA ?? 12);
+const SONDA_PRODUTOS = Number(process.env.COLETA_B_SONDA ?? 12);
 let ritmoRapido = false;
 const esperar = (ms) => new Promise((r) => setTimeout(r, ms));
 const entre = (a, b) => a + Math.random() * (b - a);
@@ -70,7 +74,7 @@ export const slugDe = (nome) =>
   semAcento(nome).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 
 async function listarProdutos(p) {
-  await p.goto(`${BASE}/cotacoes/soja-em-grao-sc-60kg`, { waitUntil: "domcontentloaded", timeout: 60_000 }).then((r) => conferirBloqueio(r, "página inicial"));
+  await p.goto(`${BASE}${PAGINA_INICIAL}`, { waitUntil: "domcontentloaded", timeout: 60_000 }).then((r) => conferirBloqueio(r, "página inicial"));
   await p.waitForLoadState("load", { timeout: 15_000 }).catch(() => {});
   await pausa(2500, 4500);
   await p.getByText("Buscar produtos", { exact: false }).first().click();
@@ -124,7 +128,7 @@ function pracasDoHtml(html) {
 async function coletarProduto(p, produto) {
   const lotes = [];
   const ouvinte = async (r) => {
-    if (r.url().includes("/api/cotacoes/busca/pracas")) {
+    if (r.url().includes(ROTA_API)) {
       try {
         lotes.push(await r.json());
       } catch {
@@ -135,7 +139,7 @@ async function coletarProduto(p, produto) {
   p.on("response", ouvinte);
   try {
     const slug = slugDe(produto.nome);
-    const r = await p.goto(`${BASE}/cotacoes/${slug}`, { waitUntil: "domcontentloaded", timeout: 60_000 });
+    const r = await p.goto(`${BASE}${ROTA_PRODUTO}${slug}`, { waitUntil: "domcontentloaded", timeout: 60_000 });
     await p.waitForLoadState("load", { timeout: 15_000 }).catch(() => {});
     await esperar(entre(800, 1800));
     if (r?.status?.() === 404) return { ...produto, slug, erro: "404 (slug não bate)", pracas: [] };
@@ -176,7 +180,7 @@ async function coletarProduto(p, produto) {
 }
 
 // ---- mapa para o nosso banco ----
-// Produtos do nosso banco que o Fonte B também tem: usamos exatamente o nome que o resto do app já procura.
+// Produtos do nosso banco que o a fonte também tem: usamos exatamente o nome que o resto do app já procura.
 const NOME_NOSSO = {
   "soja em grão sc 60kg": ["SOJA EM GRÃOS (60 kg)", "60 kg"],
   "milho seco sc 60kg": ["MILHO EM GRÃOS (60 kg)", "60 kg"],
@@ -271,7 +275,7 @@ export function planejarGravacao(coletados, { outrasPorProdutoUf, outrasPorUf })
       if (m.unificado) {
         decisao = compararComNossasFontes(pracas, outrasPorProdutoUf.get(`${m.produto}|${uf}`) ?? []);
       } else {
-        // variante só do Fonte B: grava se não houver nada parecido (mesma cultura) de outra fonte naquela UF
+        // variante só do a fonte: grava se não houver nada parecido (mesma cultura) de outra fonte naquela UF
         const parecido = (outrasPorUf.get(uf) ?? []).some((o) => semAcentoMinusculo(o.produto).includes(chave));
         decisao = { decisao: parecido ? "ja_tem_outra_variante" : "lacuna", pares: 0, mediaPct: null, absPct: null };
       }
@@ -295,11 +299,29 @@ export function planejarGravacao(coletados, { outrasPorProdutoUf, outrasPorUf })
 async function publicarSonda(dados) {
   if (!supabase) return;
   const corpo = Buffer.from(JSON.stringify({ quando: new Date().toISOString(), ...dados }));
-  const { error } = await supabase.storage.from("marketing-temp").upload("coleta-b/sonda.json", corpo, { upsert: true, contentType: "application/json" });
+  const { error } = await supabase.storage.from("coleta-b").upload("sonda.json", corpo, { upsert: true, contentType: "application/json" });
   if (error) console.log(`Aviso: sonda não enviada ao storage (${error.message}).`);
 }
 
+/** Endereço, rotas e rótulo da fonte: bucket privado `coleta-b` (ou COLETA_B_CONFIG no teste local). Nada disso fica no código do repositório. */
+async function carregarConfig() {
+  let cfg = null;
+  if (process.env.COLETA_B_CONFIG) cfg = JSON.parse(process.env.COLETA_B_CONFIG);
+  else if (supabase) {
+    const { data, error } = await supabase.storage.from("coleta-b").download("config/fonte-b.json");
+    if (error) throw new Error(`configuração da coleta não encontrada: ${error.message}`);
+    cfg = JSON.parse(await data.text());
+  }
+  if (!cfg?.base) throw new Error("configuração da coleta ausente (COLETA_B_CONFIG ou bucket coleta-b)");
+  FONTE = cfg.rotulo;
+  BASE = cfg.base;
+  ROTA_PRODUTO = cfg.rotaProduto;
+  ROTA_API = cfg.rotaApi;
+  PAGINA_INICIAL = cfg.paginaInicial;
+}
+
 async function main() {
+  await carregarConfig();
   const inicio = Date.now();
   if (process.env.COLETA_SEM_ATRASO !== "1" && !LIMITE && process.env.GITHUB_EVENT_NAME === "schedule") await esperar(entre(0, 15 * 60_000)); // hora de chegada de pessoa, não de relógio
   let navegador, ctx, p;
@@ -335,7 +357,7 @@ async function main() {
   };
   try {
     const todos = await listarProdutos(p);
-    console.log(`Fonte B: ${todos.length} produtos no catálogo.`);
+    console.log(`a fonte: ${todos.length} produtos no catálogo.`);
     let fila = embaralhar(todos);
     if (LIMITE) fila = fila.slice(0, LIMITE);
     let n = 0;
@@ -400,7 +422,7 @@ async function main() {
   // cópia no storage (bucket marketing-temp) para diagnóstico: os artefatos do GitHub só abrem com login
   if (supabase) {
     const corpo = Buffer.from(JSON.stringify({ quando: new Date().toISOString(), resumo, coletados: coletados.map((r) => ({ nome: r.nome, total: r.total, erro: r.erro, pracas: r.pracas })) }));
-    const { error } = await supabase.storage.from("marketing-temp").upload("coleta-b/snapshot.json", corpo, { upsert: true, contentType: "application/json" });
+    const { error } = await supabase.storage.from("coleta-b").upload("snapshot.json", corpo, { upsert: true, contentType: "application/json" });
     if (error) console.log(`Aviso: snapshot não enviado ao storage (${error.message}).`);
   }
 
@@ -411,7 +433,7 @@ async function main() {
   }
 }
 
-if (import.meta.main ?? process.argv[1]?.endsWith("ingest-coleta-b.mjs")) {
+if (import.meta.main ?? process.argv[1]?.endsWith("coleta-b.mjs")) {
   main().catch((e) => {
     console.error(e);
     process.exit(1);
