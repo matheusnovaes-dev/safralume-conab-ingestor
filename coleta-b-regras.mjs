@@ -100,7 +100,7 @@ export function escolherPracas(pracas, outras, k = MAX_PRACAS_POR_UF) {
 const GRAFIA = [
   [/\bArabica\b/gi, "Arábica"], [/\bConilon\b/gi, "Conillon"], [/\bMaça\b/gi, "Maçã"], [/\bMaracuja\b/gi, "Maracujá"], [/\bAçucar\b/gi, "Açúcar"],
   [/\bPessego\b/gi, "Pêssego"], [/\bMelao\b/gi, "Melão"], [/\bAzevem\b/gi, "Azevém"], [/\bHavai\b/gi, "Havaí"], [/\bAlgodao\b/gi, "Algodão"],
-  [/\bFeijao\b/gi, "Feijão"], [/\bPimentao\b/gi, "Pimentão"], [/\bAbobora\b/gi, "Abóbora"], [/\bLimao\b/gi, "Limão"], [/\bMamao\b/gi, "Mamão"],
+  [/^Mel(?=\s+\d)/i, "Mel de Abelha"], [/^Cacau(?=\s+\d)/i, "Cacau"], [/\bFeijao\b/gi, "Feijão"], [/\bPimentao\b/gi, "Pimentão"], [/\bAbobora\b/gi, "Abóbora"], [/\bLimao\b/gi, "Limão"], [/\bMamao\b/gi, "Mamão"],
 ];
 export const corrigirGrafia = (nome) => GRAFIA.reduce((n, [re, certo]) => n.replace(re, certo), String(nome));
 
