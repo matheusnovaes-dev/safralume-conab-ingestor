@@ -233,7 +233,7 @@ async function publicarSonda(dados) {
 
 async function main() {
   const inicio = Date.now();
-  if (process.env.COLETA_SEM_ATRASO !== "1" && !LIMITE && process.env.GITHUB_ACTIONS) await esperar(entre(0, 15 * 60_000)); // hora de chegada de pessoa, não de relógio
+  if (process.env.COLETA_SEM_ATRASO !== "1" && !LIMITE && process.env.GITHUB_EVENT_NAME === "schedule") await esperar(entre(0, 15 * 60_000)); // hora de chegada de pessoa, não de relógio
   let navegador, ctx, p;
   const abrir = async () => {
     await navegador?.close().catch(() => {});
