@@ -6,6 +6,8 @@ on:
     # chegar, para o horário de acesso variar como o de uma pessoa. Minuto 20 pelo mesmo motivo dos outros
     # agendamentos: o Actions atrasa a hora cheia.
     - cron: "20 9 * * *"
+    # ENSAIO ÚNICO de hoje (remover depois): primeira execução no GitHub, só leitura
+    - cron: "35 18 * * *"
   workflow_dispatch: {}
 
 jobs:

@@ -305,6 +305,12 @@ async function main() {
   };
   console.log("\nRESUMO", JSON.stringify(resumo, null, 1));
   writeFileSync("coleta-b-snapshot.json", JSON.stringify({ resumo, coletados: coletados.map((r) => ({ nome: r.nome, total: r.total, erro: r.erro, pracas: r.pracas })) }));
+  // cópia no storage (bucket marketing-temp) para diagnóstico: os artefatos do GitHub só abrem com login
+  if (supabase) {
+    const corpo = Buffer.from(JSON.stringify({ quando: new Date().toISOString(), resumo, coletados: coletados.map((r) => ({ nome: r.nome, total: r.total, erro: r.erro, pracas: r.pracas })) }));
+    const { error } = await supabase.storage.from("marketing-temp").upload("coleta-b/snapshot.json", corpo, { upsert: true, contentType: "application/json" });
+    if (error) console.log(`Aviso: snapshot não enviado ao storage (${error.message}).`);
+  }
 
   if (!SO_LER) {
     for (let i = 0; i < unicas.length; i += 500) {
