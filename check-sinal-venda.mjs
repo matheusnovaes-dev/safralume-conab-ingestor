@@ -91,7 +91,7 @@ function combinarSinalVenda(posicao, curva) {
 function combinarComClima(sinal, diasDeChuva) {
   const riscoClima = diasDeChuva != null && diasDeChuva >= LIMITE_DIAS_CHUVA_RISCO;
   if (!riscoClima) return sinal;
-  const nota = `Tem chuva forte prevista em ${diasDeChuva} dos próximos 5 dias — pode atrapalhar colheita ou escoamento, o que pesa a favor de não esperar demais pra vender.`;
+  const nota = `Tem chuva forte prevista em ${diasDeChuva} dos próximos 5 dias — pode atrapalhar colheita ou escoamento, então vale olhar o seu prazo de entrega.`;
   if (!sinal) return { tone: "warn", texto: nota };
   if (sinal.tone === "up") return { ...sinal, texto: `${sinal.texto} ${nota}` };
   return { tone: "warn", texto: `${sinal.texto} ${nota}` };
