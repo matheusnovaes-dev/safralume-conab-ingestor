@@ -66,7 +66,7 @@ async function main() {
     console.log(`${i + 1}/${pares.length} ${produto} ${uf.toUpperCase()}: ${serie.length} meses`);
     if (i < pares.length - 1) await esperar(entre(6500, 13_000)); // ritmo de pessoa
   }
-  writeFileSync("historico-mensal.json", JSON.stringify({ quando: new Date().toISOString(), semDados: sem, linhas: saida }));
+  writeFileSync(process.env.HISTORICO_SAIDA ?? "historico-mensal.json", JSON.stringify({ quando: new Date().toISOString(), semDados: sem, linhas: saida }));
   console.log(`${saida.length} linhas; sem dado: ${sem.length ? sem.join(", ") : "nenhum"}`);
   if (process.env.GRAVAR === "1" && process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) {
     const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
