@@ -64,16 +64,16 @@ function sinalDaCurvaFuturos(futuros) {
 function combinarSinalVenda(posicao, curva) {
   if (posicao == null && curva == null) return null;
   if (posicao === "alto" && curva !== "alta") {
-    return { tone: "up", texto: "Preço bem posicionado nos últimos 90 dias e o mercado futuro não aponta mais alta — pode ser um bom momento pra vender." };
+    return { tone: "up", texto: "Preço na parte alta da faixa dos últimos 90 dias e o mercado futuro não aponta mais alta. É uma leitura de onde o preço está, não uma previsão: o que decide é a sua margem." };
   }
   if (posicao === "alto" && curva === "alta") {
-    return { tone: "neutral", texto: "Preço já está bem posicionado, mas o mercado futuro ainda aponta alta — dá pra vender agora e travar esse preço, ou esperar mais um pouco de melhora." };
+    return { tone: "neutral", texto: "Preço na parte alta da faixa dos últimos 90 dias e o mercado futuro aponta alta: os sinais não indicam um lado claro. O que decide é a sua margem e a sua necessidade de caixa." };
   }
   if (posicao === "baixo" && curva === "alta") {
-    return { tone: "neutral", texto: "Preço abaixo da média dos últimos 90 dias, mas o mercado futuro aponta alta — se der pra esperar, pode valer." };
+    return { tone: "neutral", texto: "Preço na parte baixa da faixa dos últimos 90 dias, mas o mercado futuro aponta alta. É uma leitura de onde o preço está, não uma previsão." };
   }
   if (posicao === "baixo" && curva !== "alta") {
-    return { tone: "down", texto: "Preço abaixo da média dos últimos 90 dias e o mercado futuro também não aponta melhora no curto prazo." };
+    return { tone: "down", texto: "Preço na parte baixa da faixa dos últimos 90 dias e o mercado futuro também não aponta melhora no curto prazo." };
   }
   if (posicao === "neutro" && curva && curva !== "neutro") {
     return curva === "alta"
@@ -82,8 +82,8 @@ function combinarSinalVenda(posicao, curva) {
   }
   if (curva == null && posicao && posicao !== "neutro") {
     return posicao === "alto"
-      ? { tone: "up", texto: "Preço bem posicionado nos últimos 90 dias." }
-      : { tone: "down", texto: "Preço abaixo da média dos últimos 90 dias." };
+      ? { tone: "up", texto: "Preço na parte alta da faixa dos últimos 90 dias." }
+      : { tone: "down", texto: "Preço na parte baixa da faixa dos últimos 90 dias." };
   }
   return null;
 }
@@ -257,7 +257,7 @@ async function run() {
       update.sinal_venda_para_enviar = true;
       update.sinal_venda_ultimo_texto = sinal.texto;
       novosParaEnviar++;
-      console.log(`  -> Produtor ${produtor.id}: virou "bom momento pra vender" (${produtor.cultura_principal}/${produtor.uf}).`);
+      console.log(`  -> Produtor ${produtor.id}: virou "preço na parte alta" (${produtor.cultura_principal}/${produtor.uf}).`);
     } else if (toneAtual !== "up" && produtor.sinal_venda_para_enviar) {
       // Tinha um envio pendente (ex: n8n ainda esperando o template ser
       // aprovado) e o sinal deixou de ser "up" antes de sair — cancela pra
