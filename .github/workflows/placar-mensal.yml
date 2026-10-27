@@ -1,0 +1,29 @@
+name: Placar do padrão do ano (mensal)
+
+on:
+  schedule:
+    # dia 2 de cada mês, 08:40 UTC (depois da recarga do histórico mensal; minuto 40 porque o Actions atrasa a hora cheia)
+    - cron: "40 8 2 * *"
+  workflow_dispatch: {}
+  # disparo manual por push: alterar o arquivo marcador abaixo inicia a execução (o agendamento do GitHub atrasa ou descarta workflows novos)
+  push:
+    paths:
+      - ".github/placar-disparo.txt"
+
+concurrency:
+  group: placar-mensal
+  cancel-in-progress: false
+
+jobs:
+  placar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install
+      - name: Refaz o placar
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: bun run placar-mensal.mjs
