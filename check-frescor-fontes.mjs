@@ -37,7 +37,7 @@ const FONTES = [
 try {
   const { data } = await supabase.storage.from("coleta-b").download("config/fonte-b.json");
   const rotulo = JSON.parse(await data.text()).rotulo;
-  if (rotulo) FONTES.push({ fonte: rotulo, maxDiasRef: 5, maxHorasGravacao: 72 });
+  if (rotulo) FONTES.push({ fonte: rotulo, maxDiasRef: 3, maxHorasGravacao: 36 }); // diária: 3 dias de dado ou 36 h sem gravar já avisam (o site mudou de layout em 29/10 e ninguém soube por 5 dias)
 } catch {
   // sem configuração: não vigia essa fonte
 }
