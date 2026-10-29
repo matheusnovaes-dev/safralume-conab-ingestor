@@ -11,8 +11,8 @@ import { compararComNossasFontes, corrigirGrafia, ehProdutoIgnorado, escolherPra
  * Navegador Chromium comum, ritmo e ordem de pessoa (pausas aleatórias, produtos embaralhados), nenhum truque contra detecção. Se aparecer
  * bloqueio (401/403/429, captcha), o script PARA com erro claro: nunca insiste nem contorna.
  *
- * Como a página entrega: cada produto traz as 20 primeiras praças no HTML; o botão "Carregar mais" busca as próximas 20. Lemos o que o
- * próprio navegador baixa, sem chamar endpoint por fora.
+ * Como a página entrega: cada produto traz as 20 primeiras praças no HTML; o botão "Carregar mais" (no celular) busca as próximas 20. Lemos
+ * o que o próprio navegador baixa, sem chamar endpoint por fora. A lista de produtos vem do catálogo guardado (o site novo não a mostra inteira).
  *
  * Regra de gravação ("complementar"): só entra onde concorda com a fonte atual (comparação em coleta-b-regras.mjs) ou onde não há dado nosso;
  * nunca sobrescreve linha existente (ignoreDuplicates). Variáveis: COLETA_B_LIMITE=N (só N produtos), COLETA_B_SO_LER=1 (não grava),
@@ -33,7 +33,8 @@ let BASE = "";
 let ROTA_PRODUTO = "";
 let ROTA_API = "";
 let PAGINA_INICIAL = "";
-const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36";
+// Celular: desde 29/10 o computador mostra páginas numeradas (histórico de 30 dias) e o "Carregar mais" de praças só aparece no celular.
+const UA = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.6 Mobile/15E148 Safari/604.1";
 const DIAS_MAXIMOS_DE_ATRASO = 10; // praça com preço mais velho que isso não entra
 const DIAS_DO_DADO_NOSSO = 14; // "já temos dado" = linha de outra fonte nos últimos 14 dias
 const MARCAS_DE_BLOQUEIO = /just a moment|cf-chl|captcha|attention required|access denied|enable javascript and cookies|too many requests/i;
@@ -73,27 +74,76 @@ const semAcento = (s) => s.normalize("NFD").replace(/[̀-ͯ]/g, "");
 export const slugDe = (nome) =>
   semAcento(nome).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 
+/** Catálogo guardado (bucket privado `coleta-b`): o da última coleta boa. O site novo (29/10) não tem mais a lista "Buscar produtos". */
+async function catalogoGuardado() {
+  if (!supabase) return [];
+  for (const arquivo of ["catalogo.json", "snapshot.json"]) {
+    const { data, error } = await supabase.storage.from("coleta-b").download(arquivo);
+    if (error || !data) continue;
+    try {
+      const j = JSON.parse(await data.text());
+      const lista = arquivo === "catalogo.json" ? j.produtos : j.coletados?.filter((x) => !x.erro);
+      if (Array.isArray(lista) && lista.length > 0) return lista.map((x) => ({ nome: x.nome, series: x.series ?? x.total ?? 0 }));
+    } catch {
+      /* arquivo quebrado: tenta o próximo */
+    }
+  }
+  return [];
+}
+
 async function listarProdutos(p) {
   await p.goto(`${BASE}${PAGINA_INICIAL}`, { waitUntil: "domcontentloaded", timeout: 60_000 }).then((r) => conferirBloqueio(r, "página inicial"));
   await p.waitForLoadState("load", { timeout: 15_000 }).catch(() => {});
   await pausa(2500, 4500);
-  await p.getByText("Buscar produtos", { exact: false }).first().click();
-  await pausa(1500, 2500);
   const vistos = new Set();
-  for (let i = 0; i < 40; i++) {
-    const itens = await p.locator("[role=dialog] label, dialog label").evaluateAll((els) => els.map((e) => e.innerText.trim().replace(/\n+/g, " | ")));
-    const antes = vistos.size;
-    itens.forEach((x) => vistos.add(x));
-    if (vistos.size === antes && i > 2) break;
-    await p.locator("[role=dialog] label, dialog label").last().scrollIntoViewIfNeeded().catch(() => {});
-    await esperar(entre(300, 700));
+  // layout antigo: a lista inteira num diálogo "Buscar produtos"
+  const buscar = p.getByText("Buscar produtos", { exact: false }).first();
+  if (await buscar.count()) {
+    await buscar.click({ timeout: 10_000 }).catch(() => {});
+    await pausa(1500, 2500);
+    for (let i = 0; i < 40; i++) {
+      const itens = await p.locator("[role=dialog] label, dialog label").evaluateAll((els) => els.map((e) => e.innerText.trim().replace(/\n+/g, " | ")));
+      const antes = vistos.size;
+      itens.forEach((x) => vistos.add(x));
+      if (vistos.size === antes && i > 2) break;
+      await p.locator("[role=dialog] label, dialog label").last().scrollIntoViewIfNeeded().catch(() => {});
+      await esperar(entre(300, 700));
+    }
+    await p.keyboard.press("Escape").catch(() => {});
   }
-  return [...vistos]
+  const doDialogo = [...vistos]
     .map((x) => {
       const [nome, n] = x.split(" | ");
       return { nome: nome.trim(), series: Number((n ?? "0").replace(/\./g, "")) };
     })
     .filter((x) => x.nome);
+  if (doDialogo.length > 50) return doDialogo;
+  // layout novo: catálogo da última coleta boa + os produtos que a própria página liga (descobre produto novo)
+  const naPagina = await p
+    .locator(`a[href^="${ROTA_PRODUTO}"]`)
+    .evaluateAll((els, rota) => els.map((e) => [e.getAttribute("href") ?? "", e.innerText.replace(/\s+/g, " ").trim()]).filter(([h, t]) => t && new RegExp(`^${rota}[a-z0-9-]+$`).test(h)), ROTA_PRODUTO)
+    .catch(() => []);
+  const porSlug = new Map();
+  for (const x of await catalogoGuardado()) porSlug.set(slugDe(x.nome), x);
+  for (const [href, nome] of naPagina) {
+    const slug = href.slice(ROTA_PRODUTO.length);
+    // só o que parece produto com unidade ("Soja em Grão Sc 60Kg"), não categoria
+    if (!porSlug.has(slug) && slugDe(nome) === slug && /\d/.test(nome)) porSlug.set(slug, { nome, series: 0 });
+  }
+  return [...porSlug.values()];
+}
+
+/** Guarda o catálogo do que foi lido sem erro (soma ao anterior), para a próxima execução saber o que visitar. */
+async function guardarCatalogo(coletados) {
+  if (!supabase || SO_LER) return;
+  const anteriores = await catalogoGuardado();
+  const porSlug = new Map(anteriores.map((x) => [slugDe(x.nome), x]));
+  for (const r of coletados) if (!r.erro && (r.pracas?.length ?? 0) > 0) porSlug.set(slugDe(r.nome), { nome: r.nome, series: r.total ?? 0 });
+  // produto que deu 404 sai do catálogo (o site tirou); o resto fica mesmo que hoje tenha falhado
+  for (const r of coletados) if (r.erro?.startsWith("404")) porSlug.delete(slugDe(r.nome));
+  const corpo = Buffer.from(JSON.stringify({ quando: new Date().toISOString(), produtos: [...porSlug.values()] }));
+  const { error } = await supabase.storage.from("coleta-b").upload("catalogo.json", corpo, { upsert: true, contentType: "application/json" });
+  if (error) console.log(`Aviso: catálogo não guardado (${error.message}).`);
 }
 
 /** Extrai o array `pracas` do payload embutido na página (primeiras 20). */
@@ -150,7 +200,7 @@ async function coletarProduto(p, produto) {
     await gestoDeLeitura(p);
     let cliques = 0;
     while (cliques < 60) {
-      const botao = p.getByText("Carregar mais", { exact: false }).first();
+      const botao = p.locator('button:has-text("Carregar mais"):visible').first();
       if (!(await botao.count())) break;
       await pausa(2200, 5200);
       await botao.scrollIntoViewIfNeeded().catch(() => {});
@@ -173,7 +223,7 @@ async function coletarProduto(p, produto) {
       await esperar(entre(900, 2200));
     }
     const pracas = [...primeira.pracas, ...lotes.flatMap((l) => l.pracas ?? [])];
-    return { ...produto, slug, total: primeira.total, cliques, pracas, ok: pracas.length === primeira.total };
+    return { ...produto, slug, total: primeira.total, cliques, pracas, ok: pracas.length >= primeira.total };
   } finally {
     p.off("response", ouvinte);
   }
@@ -330,7 +380,15 @@ async function main() {
   const abrir = async () => {
     await navegador?.close().catch(() => {});
     navegador = await chromium.launch();
-    ctx = await navegador.newContext({ userAgent: UA, locale: "pt-BR", timezoneId: "America/Sao_Paulo", viewport: { width: 1366 + Math.floor(Math.random() * 400), height: 800 + Math.floor(Math.random() * 200) } });
+    ctx = await navegador.newContext({
+      userAgent: UA,
+      locale: "pt-BR",
+      timezoneId: "America/Sao_Paulo",
+      viewport: { width: 375 + Math.floor(Math.random() * 56), height: 780 + Math.floor(Math.random() * 150) },
+      isMobile: true,
+      hasTouch: true,
+      deviceScaleFactor: 3,
+    });
     p = await ctx.newPage();
   };
   await abrir();
@@ -360,7 +418,11 @@ async function main() {
   try {
     const todos = await listarProdutos(p);
     console.log(`a fonte: ${todos.length} produtos no catálogo.`);
+    if (todos.length === 0) throw new Error("catálogo de produtos vazio (site mudou e não há catálogo guardado)");
     let fila = embaralhar(todos);
+    // COLETA_B_SO_ESTES="soja-em-grao-sc-60kg,boi-gordo-15kg": só esses (teste)
+    const soEstes = (process.env.COLETA_B_SO_ESTES ?? "").split(",").map((x) => x.trim()).filter(Boolean);
+    if (soEstes.length) fila = fila.filter((x) => soEstes.includes(slugDe(x.nome)));
     if (LIMITE) fila = fila.slice(0, LIMITE);
     let n = 0;
     const inicioDaSonda = Date.now();
@@ -405,6 +467,7 @@ async function main() {
     await navegador?.close().catch(() => {});
   }
   await gravarLote(); // o que sobrou do último lote (também se houve bloqueio)
+  await guardarCatalogo(coletados);
 
   const resumo = {
     produtos: coletados.length,
