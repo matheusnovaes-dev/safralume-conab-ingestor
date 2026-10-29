@@ -1,1 +1,2 @@
 2026-10-27T12:57:50Z
+29/10/2026 16:40 UTC: disparo manual (a execução agendada, que começou 7 h atrasada, falhou após 13 min sem gravar nada)
