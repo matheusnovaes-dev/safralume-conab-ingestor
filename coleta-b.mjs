@@ -83,7 +83,8 @@ async function catalogoGuardado() {
     try {
       const j = JSON.parse(await data.text());
       const lista = arquivo === "catalogo.json" ? j.produtos : j.coletados?.filter((x) => !x.erro);
-      if (Array.isArray(lista) && lista.length > 0) return lista.map((x) => ({ nome: x.nome, series: x.series ?? x.total ?? 0 }));
+      // um resumo de teste (poucos produtos) não é catálogo
+      if (Array.isArray(lista) && lista.length >= (arquivo === "catalogo.json" ? 1 : 100)) return lista.map((x) => ({ nome: x.nome, series: x.series ?? x.total ?? 0 }));
     } catch {
       /* arquivo quebrado: tenta o próximo */
     }
@@ -348,8 +349,11 @@ export function planejarGravacao(coletados, { outrasPorProdutoUf, outrasPorUf })
   return { unicas, pulados, porUf, decisoes };
 }
 
+// execução de teste (só alguns produtos): não publica sonda nem resumo, para não apagar os da coleta de verdade
+const EH_TESTE = LIMITE > 0 || !!process.env.COLETA_B_SO_ESTES;
+
 async function publicarSonda(dados) {
-  if (!supabase) return;
+  if (!supabase || EH_TESTE) return;
   const corpo = Buffer.from(JSON.stringify({ quando: new Date().toISOString(), ...dados }));
   const { error } = await supabase.storage.from("coleta-b").upload("sonda.json", corpo, { upsert: true, contentType: "application/json" });
   if (error) console.log(`Aviso: sonda não enviada ao storage (${error.message}).`);
@@ -485,7 +489,7 @@ async function main() {
   console.log("\nRESUMO", JSON.stringify(resumo, null, 1));
   writeFileSync("coleta-b-snapshot.json", JSON.stringify({ resumo, coletados: coletados.map((r) => ({ nome: r.nome, total: r.total, erro: r.erro, pracas: r.pracas })) }));
   // cópia no storage (bucket marketing-temp) para diagnóstico: os artefatos do GitHub só abrem com login
-  if (supabase) {
+  if (supabase && !EH_TESTE) {
     const corpo = Buffer.from(JSON.stringify({ quando: new Date().toISOString(), resumo, coletados: coletados.map((r) => ({ nome: r.nome, total: r.total, erro: r.erro, pracas: r.pracas })) }));
     const { error } = await supabase.storage.from("coleta-b").upload("snapshot.json", corpo, { upsert: true, contentType: "application/json" });
     if (error) console.log(`Aviso: snapshot não enviado ao storage (${error.message}).`);
