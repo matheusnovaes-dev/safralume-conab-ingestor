@@ -4,8 +4,13 @@ on:
   schedule:
     # Todo dia às 09:20 UTC (06:20 BRT) — antes do início do dia de campo,
     # com a previsão do dia já disponível.
-    - cron: "20 9 * * *"
+    # 29/10: rodava entre 11h e 13h de Brasília em vez de 6h20. Quatro chamadas pela manhã; o script não repete o aviso no mesmo dia (ultimo_disparo_data).
+    - cron: "20 9-12 * * *"
   workflow_dispatch: {}
+
+concurrency:
+  group: check-alertas-clima
+  cancel-in-progress: false
 
 jobs:
   check:

@@ -6,8 +6,13 @@ on:
     # alerta de limite único, como preço) — o n8n manda a mensagem a cada
     # hora (disparado_em setado). Minuto 25 (não 0) de propósito, mesmo
     # achado de 2026-10-10 em reativacao.yml.
-    - cron: "25 */2 * * *"
+    # 29/10: mesmo atraso do alerta de preço (rodava a cada 6-8 h); duas chamadas por hora, idempotente (só alertas com disparado_em vazio).
+    - cron: "22,52 * * * *"
   workflow_dispatch: {}
+
+concurrency:
+  group: check-alertas-cambio
+  cancel-in-progress: false
 
 jobs:
   check:

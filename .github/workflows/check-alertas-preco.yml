@@ -6,8 +6,15 @@ on:
     # (disparado_em setado), então rodar a cada 2h garante que um alerta
     # recém-disparado não fique esperando mais de ~1h extra pra ser
     # detectado e entrar na fila de envio.
-    - cron: "15 */2 * * *"
+    # 29/10: o Actions rodava isso a cada 6-8 h em vez de 2 h (ontem: 01:17, 08:23, 16:35, 22:31 UTC) e o aviso de preço chegava com horas de atraso.
+    # Agora há duas chamadas por hora em minutos fora do pico; é seguro (só olha alertas ainda não disparados e marca disparado_em) e o Actions que atrasar
+    # uma deixa a outra pegar.
+    - cron: "7,37 * * * *"
   workflow_dispatch: {}
+
+concurrency:
+  group: check-alertas-preco
+  cancel-in-progress: false
 
 jobs:
   check:
