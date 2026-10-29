@@ -63,6 +63,11 @@ export function compararComNossasFontes(pracasB, outras) {
     if (ref && Number.isFinite(a.preco)) difs.push(((a.preco - ref) / ref) * 100);
   }
   if (difs.length < LIMITES.minimoDePares) {
+    // uma praça em comum que bate de perto (soja GO em 29/10: Rio Verde R$ 140 nas duas) basta; diferença maior segura
+    if (difs.length >= 1 && difs.every((d) => Math.abs(d) <= LIMITES.toleranciaDaMediaPct)) {
+      const media = difs.reduce((x, y) => x + y, 0) / difs.length;
+      return { decisao: "concorda", pares: difs.length, mediaPct: arred(media), absPct: arred(Math.abs(media)), pelaPracaEmComum: true, baseline: "praças" };
+    }
     // poucas praças em comum: confere pela média da UF; só aprova se estiver bem perto, senão segura.
     const ultimasPorRegiao = new Map();
     for (const o of [...regionais].sort((a, b) => a.data_referencia.localeCompare(b.data_referencia))) ultimasPorRegiao.set(o.regiao, o.preco);
