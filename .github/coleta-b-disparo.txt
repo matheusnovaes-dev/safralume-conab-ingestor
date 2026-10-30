@@ -2,3 +2,4 @@
 29/10/2026 16:40 UTC: disparo manual (a execução agendada, que começou 7 h atrasada, falhou após 13 min sem gravar nada)
 disparo 2026-10-29T20:13Z: coletor no layout novo (celular + catálogo guardado)
 disparo 2026-10-29T20:39Z: catálogo de 248 restaurado (a anterior leu só 8 produtos)
+disparo 2026-10-30T12:43Z: a execução agendada de 30/10 ainda não tinha começado (GitHub atrasa); coleta do dia disparada à mão
