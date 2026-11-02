@@ -1,11 +1,9 @@
 name: Coleta B (preços, 1x por dia)
 
 on:
-  schedule:
-    # Uma vez por dia, de manhã (06h20 America/Sao_Paulo = 09h20 UTC). O script ainda espera de 0 a 15 min ao
-    # chegar, para o horário de acesso variar como o de uma pessoa. Minuto 20 pelo mesmo motivo dos outros
-    # agendamentos: o Actions atrasa a hora cheia.
-    - cron: "20 9 * * *"
+  # SEM agendamento do GitHub (02/11/2026): o cron do Actions atrasa de 4 a 7 h e a coleta só rodava à tarde. Quem dispara é o fluxo do n8n
+  # "Disparar coleta de preços (6h20)" (workflow_dispatch às 06h20 de Brasília, avisa o Matheus no Telegram se o disparo falhar). Manter o
+  # agendamento junto rodaria a coleta DUAS vezes por dia na fonte; o vigia de frescor (check-frescor-fontes.mjs) avisa se ficar 36 h sem gravar.
   workflow_dispatch: {}
   # Disparo manual por push: alterar o arquivo marcador abaixo inicia a execução (o agendamento do GitHub atrasa ou descarta workflows novos).
   push:
