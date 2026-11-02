@@ -3,3 +3,4 @@
 disparo 2026-10-29T20:13Z: coletor no layout novo (celular + catálogo guardado)
 disparo 2026-10-29T20:39Z: catálogo de 248 restaurado (a anterior leu só 8 produtos)
 disparo 2026-10-30T12:43Z: a execução agendada de 30/10 ainda não tinha começado (GitHub atrasa); coleta do dia disparada à mão
+disparo 2026-11-02T16:37Z: 02/11 (Finados) a execução agendada ainda não tinha começado e a fonte já tem cotações de 02/11; coleta do dia disparada à mão
