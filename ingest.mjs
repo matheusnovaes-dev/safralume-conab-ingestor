@@ -44,7 +44,8 @@ function formatPeriodo(diasAtras) {
   const inicio = new Date();
   inicio.setDate(inicio.getDate() - diasAtras);
   const fmt = (d) => d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
-  return `${fmt(inicio)} até ${fmt(fim)}`;
+  // O app da própria Conab manda "ate" SEM acento (mostra "até" na tela, mas o corpo do pedido leva "ate"); com "até" o servidor responde 403 (visto em 05/11/2026).
+  return `${fmt(inicio)} ate ${fmt(fim)}`;
 }
 
 function parsePeriodoEndDate(periodo) {
@@ -92,29 +93,50 @@ async function bootstrap(page) {
   }
   await page.waitForTimeout(1500);
 
-  await page.locator("#range-input").click();
-  await page.waitForTimeout(500);
-  const days = page.locator(".flatpickr-day:not(.prevMonthDay):not(.nextMonthDay)");
-  await days.nth(0).click();
-  await page.waitForTimeout(300);
-  await days.nth(17).click();
-  await page.waitForTimeout(500);
-
-  const pesquisarBtn = page.locator('button:has-text("Pesquisar")');
-  await pesquisarBtn.click();
-
-  // Achado real 2026-10-06: espera fixa de 1,5s falhou 3x seguidas num dia
-  // em que o backend da Conab respondeu mais devagar (screenshot da falha
-  // mostrava a página ainda com spinner de carregamento nesse momento) —
-  // mesmo padrão de outras fontes externas instáveis (ver clima.ts: timeout
-  // generoso em vez de tentativa curta). `waitFor` espera o elemento
-  // aparecer de verdade, até 20s, em vez de adivinhar um tempo fixo.
+  // 2026-11-05: o calendário escolhia os dias 1 a 18 do mês CORRENTE. Esse período só serve para o formulário aparecer (o período que vale para os dados é o de
+  // formatPeriodo, abaixo), mas a Conab só mostra o formulário se o período tiver dados já publicados, e ela publica com ~2 semanas de atraso: no começo do mês
+  // (e até a metade dele) o período era futuro, aparecia "Não há dados para o período consultado" e o campo Produto nunca vinha (último dado: 09/10, execuções
+  // vermelhas desde então). Agora o período é sempre dos dias 1 a 18 do MÊS ANTERIOR (publicado com certeza); se mesmo assim faltar, tenta 2 meses atrás.
   const produtoField = page.locator('.br-select:has-text("Produto")').first();
-  try {
-    await produtoField.waitFor({ state: "visible", timeout: 20000 });
-  } catch {
+  let formularioApareceu = false;
+  for (const mesesAtras of [1, 2]) {
+    if (mesesAtras > 1) {
+      await page.reload({ waitUntil: "domcontentloaded" });
+      await page.waitForSelector("#range-input", { timeout: 30000 });
+      await page.waitForTimeout(1500);
+    }
+    await page.locator("#range-input").click();
+    await page.waitForTimeout(500);
+    for (let k = 0; k < mesesAtras; k++) {
+      await page.locator(".flatpickr-prev-month").click();
+      await page.waitForTimeout(400);
+    }
+    const days = page.locator(".flatpickr-day:not(.prevMonthDay):not(.nextMonthDay)");
+    await days.nth(0).click();
+    await page.waitForTimeout(300);
+    await days.nth(17).click();
+    await page.waitForTimeout(500);
+
+    await page.locator('button:has-text("Pesquisar")').click();
+
+    // Achado real 2026-10-06: espera fixa de 1,5s falhou 3x seguidas num dia
+    // em que o backend da Conab respondeu mais devagar (screenshot da falha
+    // mostrava a página ainda com spinner de carregamento nesse momento) —
+    // mesmo padrão de outras fontes externas instáveis (ver clima.ts: timeout
+    // generoso em vez de tentativa curta). `waitFor` espera o elemento
+    // aparecer de verdade, até 20s, em vez de adivinhar um tempo fixo.
+    try {
+      await produtoField.waitFor({ state: "visible", timeout: 20000 });
+      formularioApareceu = true;
+      break;
+    } catch {
+      const texto = await page.locator("body").innerText({ timeout: 3000 }).catch(() => "");
+      console.log(`Período de ${mesesAtras} mês(es) atrás sem formulário${/Não há dados/i.test(texto) ? " (a Conab respondeu: não há dados para o período)" : ""}.`);
+    }
+  }
+  if (!formularioApareceu) {
     await page.screenshot({ path: "failure.png", fullPage: true });
-    throw new Error("Campo 'Produto' não apareceu após Pesquisar.");
+    throw new Error("Campo 'Produto' não apareceu após Pesquisar (nem com o período de 1 e de 2 meses atrás).");
   }
   await produtoField.click();
   await page.waitForTimeout(400);
@@ -158,9 +180,11 @@ async function fetchAllPages(page, url, baseBody, periodo) {
   while (start < count) {
     const body = {
       ...baseBody,
-      produto: PRODUTOS,
-      nivelComercializacao: [NIVEL_PRODUTOR],
-      unidadeFederacao: UFS,
+      // Produtos e UFs vão como UMA string separada por vírgula, igual ao app da Conab; arrays com mais de um item fazem a API responder 403 (visto em 05/11/2026).
+      produto: PRODUTOS.join(","),
+      nivelComercializacao: NIVEL_PRODUTOR,
+      // A API quer as UFs como UMA string separada por vírgula ("BA,DF,GO"), como o app dela manda; como array de strings ela responde 403 (visto em 05/11/2026).
+      unidadeFederacao: UFS.join(","),
       periodo,
       pageSize: PAGE_SIZE,
       start,
@@ -171,7 +195,8 @@ async function fetchAllPages(page, url, baseBody, periodo) {
       timeout: 60000,
     });
     if (!res.ok()) {
-      throw new Error(`Conab respondeu ${res.status()} na página start=${start}`);
+      const corpo = (await res.text().catch(() => "")).replace(/\s+/g, " ").slice(0, 300);
+      throw new Error(`Conab respondeu ${res.status()} na página start=${start}${corpo ? ` — ${corpo}` : ""}`);
     }
     const json = await res.json();
     count = json.count ?? 0;
