@@ -1,10 +1,8 @@
 name: Lembrete de retomada (produtor sumiu)
 
 on:
-  schedule:
-    # Todo dia às 13:30 UTC (10:30 BRT) — depois do aviso de trial (12:00
-    # UTC), pra não competir pela mesma janela de horário de mensagem.
-    - cron: "30 13 * * *"
+  # 10/11/2026: o horário agora é do n8n (workflow "...(10h30, Brasília)"). O agendamento do GitHub atrasava este disparo por ~7 horas
+  # (a rotina agendada para 9h saía às 16h). Fica só o disparo manual, como reserva.
   workflow_dispatch: {}
 
 jobs:

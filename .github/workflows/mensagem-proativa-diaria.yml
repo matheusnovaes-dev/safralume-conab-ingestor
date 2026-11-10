@@ -1,12 +1,8 @@
 name: Mensagem proativa diária (preço moveu / clima severo)
 
 on:
-  schedule:
-    # Todo dia ~11:09 UTC (~08:09 BRT) — de manhã, pedido do Matheus 2026-10-11.
-    # Minuto 9 (não 0) de propósito — mesmo achado de 2026-10-10 em
-    # reativacao.yml: hora cheia exata faz o GitHub Actions atrasar o run
-    # de verdade por horas.
-    - cron: "9 11 * * *"
+  # 10/11/2026: o horário agora é do n8n (workflow "...(8h09, Brasília)"). O agendamento do GitHub atrasava este disparo por ~7 horas
+  # (a rotina agendada para 9h saía às 16h). Fica só o disparo manual, como reserva.
   workflow_dispatch: {}
 
 jobs:

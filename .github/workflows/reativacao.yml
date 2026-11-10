@@ -1,15 +1,8 @@
 name: Reativar trial vencido (nunca conversou)
 
 on:
-  schedule:
-    # Todo dia ~14:17 UTC (~11:17 BRT) — depois do lembrete de retomada
-    # (13:30 UTC), pra não competir pela mesma janela de horário de mensagem.
-    # Minuto 17 (não 0) de propósito — achado real 2026-10-10: rodando na
-    # hora cheia, o run real ficava 4-6h atrasado todo santo dia (ex: rodou
-    # 18:22 UTC em vez de 14:00), mesmo problema já documentado e evitado em
-    # ingest.yml (GitHub Actions deprioriza agendamentos concentrados em
-    # ":00" — essa automação simplesmente não tinha recebido o mesmo fix).
-    - cron: "17 14 * * *"
+  # 10/11/2026: o horário agora é do n8n (workflow "...(11h17, Brasília)"). O agendamento do GitHub atrasava este disparo por ~7 horas
+  # (a rotina agendada para 9h saía às 16h). Fica só o disparo manual, como reserva.
   workflow_dispatch: {}
 
 jobs:
